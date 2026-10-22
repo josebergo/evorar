@@ -32,3 +32,8 @@ pub fn status() -> Status {
         context_menu: false,
     }
 }
+
+/// macOS 无运行期注册表,不存在路径失效问题
+pub fn needs_repair(_exe: &str) -> Option<IntegrationFlags> {
+    None
+}

@@ -1,4 +1,6 @@
-# 🗜️ evorar
+<img src="design/icon.png" width="128" height="128" alt="Evorar app icon" />
+
+# evorar
 
 **English | [简体中文](README.md)**
 

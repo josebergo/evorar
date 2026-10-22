@@ -128,6 +128,24 @@ pub fn status() -> Status {
     s
 }
 
+/// 启动自愈:集成已开启,但注册表记录的 exe 路径与当前运行的不一致
+/// (绿色版更新放到了新位置/改名)时,返回应重写的开关状态,由调用方静默 apply,
+/// 避免旧 exe 删除后右键菜单与关联仍指向死路径。
+pub fn needs_repair(exe: &str) -> Option<IntegrationFlags> {
+    let hkcu = RegKey::predef(HKEY_CURRENT_USER);
+    let m = hkcu.open_subkey(MARKER_ROOT).ok()?;
+    let association = m.get_value::<u32, _>("Association").unwrap_or(0) == 1;
+    let context_menu = m.get_value::<u32, _>("ContextMenu").unwrap_or(0) == 1;
+    if !association && !context_menu {
+        return None;
+    }
+    let recorded: String = m.get_value("Exe").ok()?;
+    if recorded.eq_ignore_ascii_case(exe) {
+        return None;
+    }
+    Some(IntegrationFlags { association, context_menu })
+}
+
 // ---------------- 关联(ProgID + 扩展名) ----------------
 
 fn write_association(hkcu: &RegKey, exe: &str) -> io::Result<()> {
@@ -290,6 +308,9 @@ fn notify_shell() {
 mod tests {
     use super::*;
 
+    /// 真实注册表用例共享一把锁,避免并行测试互踩同一套 HKCU 键
+    static REG_GUARD: parking_lot::Mutex<()> = parking_lot::Mutex::new(());
+
     #[test]
     fn verb_command_quotes_everything() {
         assert_eq!(
@@ -340,6 +361,7 @@ mod tests {
     /// 全程只动本模块管理的键,结束时恢复原状;中断残留可用设置开关重写/清除。
     #[test]
     fn apply_status_remove_roundtrip() {
+        let _reg = REG_GUARD.lock();
         let exe = r"C:\evorar-test-does-not-exist.exe";
         apply(
             exe,
@@ -389,5 +411,26 @@ mod tests {
             "右键菜单键必须删除"
         );
         assert!(hkcu.open_subkey(MARKER_ROOT).is_err(), "全关时标记键应整体删除");
+    }
+
+    /// 绿色版更新场景:exe 换路径后启动,检测到不一致并重写
+    #[test]
+    fn needs_repair_detects_path_change() {
+        let _reg = REG_GUARD.lock();
+        let old = r"C:\old\evorar.exe";
+        let new = r"C:\new dir\evorar.exe";
+        apply(old, IntegrationFlags { association: true, context_menu: true }).unwrap();
+
+        assert!(needs_repair(old).is_none(), "路径一致不需要修复");
+
+        let flags = needs_repair(new).expect("路径变化应触发修复");
+        assert!(flags.association && flags.context_menu, "保持原开关状态");
+
+        apply(new, IntegrationFlags { association: true, context_menu: true }).unwrap();
+        assert!(needs_repair(new).is_none(), "重写后不再需要修复");
+
+        apply(new, IntegrationFlags { association: false, context_menu: false }).unwrap();
+        assert!(needs_repair(new).is_none(), "集成已关不触发修复");
+        assert!(needs_repair(old).is_none());
     }
 }

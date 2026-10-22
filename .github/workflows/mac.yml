@@ -30,7 +30,7 @@ jobs:
         with:
           workspaces: src-tauri
 
-      - name: Regenerate icon.icns from latest icon.png
+      - name: Regenerate icon.icns from design/icon.png
         run: |
           python3 -m venv /tmp/icnsenv
           /tmp/icnsenv/bin/pip install --quiet pillow

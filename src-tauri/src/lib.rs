@@ -323,6 +323,16 @@ pub fn run() {
             .map(|a| a.to_string_lossy().into_owned())
             .collect::<Vec<_>>(),
     );
+    // 集成自愈(后台静默):集成已开启但 exe 路径变了(绿色版更新/移动)时,
+    // 用当前路径重写注册表,右键菜单与关联即刻跟随新版
+    if let Ok(exe) = std::env::current_exe() {
+        let exe = exe.display().to_string();
+        std::thread::spawn(move || {
+            if let Some(flags) = shell::needs_repair(&exe) {
+                let _ = shell::apply(&exe, flags);
+            }
+        });
+    }
     let builder = tauri::Builder::default();
     // 单实例(仅 Windows/Linux):已运行时聚焦主窗口,并转发新实例的启动参数
     #[cfg(any(target_os = "windows", target_os = "linux"))]

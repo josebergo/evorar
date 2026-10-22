@@ -1,4 +1,6 @@
-# 🗜️ Evorar 艾呀压
+<img src="design/icon.png" width="128" height="128" alt="Evorar 艾呀压图标" />
+
+# Evorar 艾呀压
 
 **[English](README.en.md) | 简体中文**
 

@@ -19,4 +19,4 @@ pub use windows as platform;
 #[cfg(target_os = "macos")]
 pub use macos as platform;
 
-pub use platform::{apply, status, IntegrationFlags, Status};
+pub use platform::{apply, needs_repair, status, IntegrationFlags, Status};
