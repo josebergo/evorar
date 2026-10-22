@@ -1,0 +1,9 @@
+node_modules/
+dist/
+src-tauri/target/
+src-tauri/gen/schemas/
+*.log
+.DS_Store
+
+# 构建产物走 GitHub Releases,不入库
+src-tauri/bundle-manual/*.exe

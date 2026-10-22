@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>evorar</title>
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <div id="app">
+      <!-- 菜单栏(可拖拽) -->
+      <header class="menubar" data-tauri-drag-region>
+        <div class="brand" data-tauri-drag-region>
+          <span class="brand-logo">🗜️</span>
+          <span class="brand-name">evorar</span>
+        </div>
+        <nav class="menu">
+          <button id="menu-about" class="menu-item">关于</button>
+          <button id="home-btn" class="menu-item" title="返回首页">⟲ 主页</button>
+        </nav>
+      </header>
+
+      <!-- 主区 -->
+      <main class="content">
+        <!-- 空态:拖放引导 -->
+        <section id="empty-view" class="view">
+          <div id="drop-hint" class="drop-hint">
+            <div class="drop-icon">📦</div>
+            <div class="drop-title">拖入压缩包解压,或拖入文件压缩</div>
+            <div class="drop-chips">
+              <span class="chip">ZIP</span><span class="chip">7Z</span><span class="chip">RAR</span
+              ><span class="chip">TAR</span><span class="chip">GZ</span><span class="chip">BZ2</span
+              ><span class="chip">XZ</span>
+            </div>
+            <div class="drop-actions">
+              <button id="pick-archive-btn" class="btn primary">打开压缩包</button>
+              <button id="pick-files-btn" class="btn">选择文件压缩</button>
+            </div>
+          </div>
+        </section>
+
+        <!-- 浏览态:压缩包内容 -->
+        <section id="browse-view" class="view">
+          <div class="arc-head">
+            <span id="fmt-badge" class="badge">ZIP</span>
+            <div class="arc-info">
+              <div id="arc-title" class="arc-title"></div>
+              <div id="arc-meta" class="arc-meta"></div>
+            </div>
+          </div>
+          <div id="entry-list" class="entry-list"></div>
+        </section>
+
+        <!-- 压缩态:待压缩清单 -->
+        <section id="compress-view" class="view">
+          <div class="arc-head">
+            <span class="badge comp">压缩</span>
+            <div class="arc-info">
+              <div class="arc-title"><span id="comp-count"></span> 待压缩</div>
+              <div id="comp-size" class="arc-meta"></div>
+            </div>
+          </div>
+          <div id="comp-list" class="entry-list"></div>
+        </section>
+      </main>
+
+      <!-- 底部操作栏 -->
+      <footer class="actionbar">
+        <div id="action-browse" class="action-group">
+          <button id="smart-extract-btn" class="btn primary">⚡ 智能解压</button>
+          <button id="extract-to-btn" class="btn">解压到…</button>
+        </div>
+        <div id="action-compress" class="action-group">
+          <div class="seg">
+            <button id="fmt-zip" class="seg-btn">ZIP</button>
+            <button id="fmt-7z" class="seg-btn">7Z</button>
+          </div>
+          <div class="seg">
+            <button id="lvl-fast" class="seg-btn">极速</button>
+            <button id="lvl-normal" class="seg-btn">标准</button>
+            <button id="lvl-max" class="seg-btn">极限</button>
+          </div>
+          <button id="compress-btn" class="btn primary">🗜️ 压缩</button>
+        </div>
+      </footer>
+
+      <!-- 进度卡片 -->
+      <div id="progress-card" class="progress-card">
+        <div class="progress-head">
+          <span id="progress-text" class="progress-text">处理中…</span>
+          <button id="cancel-btn" class="link-btn">取消</button>
+        </div>
+        <div class="progress-track"><div id="progress-bar-fill" class="progress-fill"></div></div>
+        <div id="progress-file" class="progress-file"></div>
+      </div>
+
+      <!-- Toast -->
+      <div id="toast" class="toast"></div>
+
+      <!-- 关于弹窗 -->
+      <div id="about-modal" class="modal-mask">
+        <div class="modal">
+          <div class="modal-logo">🗜️</div>
+          <div class="modal-title">evorar <span id="about-version" class="modal-ver"></span></div>
+          <div class="modal-slogan">纯静 · 轻快 · 漂亮的解压缩工具</div>
+          <div class="modal-promise">零广告 · 零后台驻留 · 零捆绑 · 开源</div>
+          <button id="about-github" class="btn primary wide">
+            ⭐ GitHub 仓库
+          </button>
+          <div class="modal-license">MIT License · Tauri + Rust</div>
+          <button id="about-close" class="link-btn">关闭</button>
+        </div>
+      </div>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

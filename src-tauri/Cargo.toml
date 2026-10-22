@@ -1,0 +1,35 @@
+[package]
+name = "evorar"
+version = "0.1.0"
+description = "evorar - 纯静轻快的解压缩工具"
+edition = "2021"
+
+[lib]
+name = "evorar_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+zip = { version = "2", default-features = false, features = ["deflate", "deflate64", "bzip2", "time", "aes-crypto"] }
+sevenz-rust = "0.6"
+tar = "0.4"
+flate2 = "1"
+bzip2 = "0.5"
+xz2 = "0.1"
+unrar = "0.5"
+encoding_rs = "0.8"
+walkdir = "2"
+parking_lot = "0.12"
+
+[profile.release]
+panic = "abort"
+codegen-units = 1
+lto = true
+opt-level = "s"
+strip = true
