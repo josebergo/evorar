@@ -178,7 +178,7 @@ fn cancel_task(registry: State<'_, TaskRegistry>, task_id: u32) -> bool {
     }
 }
 
-/// 打开目录(资源管理器)—— 解压完成后「打开文件夹」按钮
+/// 打开目录(资源管理器 / 访达)—— 解压完成后「打开文件夹」按钮
 #[tauri::command]
 async fn reveal_path(path: String) -> Result<(), String> {
     let p = PathBuf::from(&path);
@@ -186,24 +186,52 @@ async fn reveal_path(path: String) -> Result<(), String> {
         return Err("路径不存在".into());
     }
     let arg = p.as_os_str().to_string_lossy().into_owned();
-    std::process::Command::new("explorer")
-        .arg(&arg)
-        .spawn()
-        .map_err(|e| e.to_string())?;
+    #[cfg(target_os = "windows")]
+    {
+        std::process::Command::new("explorer")
+            .arg(&arg)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .arg("-R")
+            .arg(&arg)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+    {
+        let _ = arg;
+        return Err("不支持的平台".into());
+    }
     Ok(())
 }
 
 /// 用系统默认浏览器打开外部链接(如 GitHub 仓库)。
-/// explorer 直接把 URL 交给 Shell:无 cmd、无控制台窗口,程序自身不访问网络。
+/// Windows 经 explorer、macOS 经 open 交给系统 Shell:无 cmd、无控制台窗口,程序自身不访问网络。
 #[tauri::command]
 async fn open_url(url: String) -> Result<(), String> {
     if !url.starts_with("https://") && !url.starts_with("http://") {
         return Err("仅允许 http(s) 链接".into());
     }
-    std::process::Command::new("explorer")
-        .arg(&url)
-        .spawn()
-        .map_err(|e| e.to_string())?;
+    #[cfg(target_os = "windows")]
+    let program = "explorer";
+    #[cfg(target_os = "macos")]
+    let program = "open";
+    #[cfg(any(target_os = "windows", target_os = "macos"))]
+    {
+        std::process::Command::new(program)
+            .arg(&url)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+    {
+        let _ = url;
+        return Err("不支持的平台".into());
+    }
     Ok(())
 }
 
@@ -271,7 +299,11 @@ fn path_exists(path: String) -> bool {
 #[tauri::command]
 fn shell_integration_get() -> serde_json::Value {
     let s = shell::status();
-    serde_json::json!({ "association": s.association, "contextMenu": s.context_menu })
+    serde_json::json!({
+        "association": s.association,
+        "contextMenu": s.context_menu,
+        "platform": std::env::consts::OS,
+    })
 }
 
 #[tauri::command]
@@ -291,22 +323,65 @@ pub fn run() {
             .map(|a| a.to_string_lossy().into_owned())
             .collect::<Vec<_>>(),
     );
-    tauri::Builder::default()
-        // 单实例:已运行时聚焦主窗口,并转发新实例的启动参数
-        .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
-            if let Some(w) = app.get_webview_window("main") {
-                let _ = w.unminimize();
-                let _ = w.show();
-                let _ = w.set_focus();
-            }
-            let rest: Vec<String> = args.iter().skip(1).cloned().collect();
-            if let Some(action) = parse_launch_args(&rest) {
-                let _ = app.emit("launch-action", &action);
-            }
-        }))
+    let builder = tauri::Builder::default();
+    // 单实例(仅 Windows/Linux):已运行时聚焦主窗口,并转发新实例的启动参数
+    #[cfg(any(target_os = "windows", target_os = "linux"))]
+    let builder = builder.plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
+        if let Some(w) = app.get_webview_window("main") {
+            let _ = w.unminimize();
+            let _ = w.show();
+            let _ = w.set_focus();
+        }
+        let rest: Vec<String> = args.iter().skip(1).cloned().collect();
+        if let Some(action) = parse_launch_args(&rest) {
+            let _ = app.emit("launch-action", &action);
+        }
+    }));
+    builder
         .plugin(tauri_plugin_dialog::init())
         .manage(TaskRegistry::default())
         .manage(PendingLaunch(Mutex::new(initial)))
+        .setup(|_app| {
+            // macOS 合规要求:标准应用菜单(关于/服务/隐藏/退出)+ 文件/窗口菜单
+            #[cfg(target_os = "macos")]
+            {
+                use tauri::menu::{Menu, MenuItem, SubmenuBuilder};
+                let app_menu = SubmenuBuilder::new(_app, "evorar")
+                    .about(None)
+                    .separator()
+                    .services()
+                    .separator()
+                    .hide()
+                    .hide_others()
+                    .show_all()
+                    .separator()
+                    .quit()
+                    .build()?;
+                let file_menu = SubmenuBuilder::new(_app, "文件")
+                    .item(&MenuItem::with_id(_app, "open-archive", "打开压缩包…", true, Some("CmdOrCtrl+O"))?)
+                    .item(&MenuItem::with_id(_app, "pick-files", "选择文件压缩…", true, None))
+                    .build()?;
+                let window_menu = SubmenuBuilder::new(_app, "窗口")
+                    .minimize()
+                    .close_window()
+                    .build()?;
+                let menu = Menu::with_items(_app, &[&app_menu, &file_menu, &window_menu])?;
+                _app.set_menu(menu)?;
+            }
+            Ok(())
+        })
+        .on_menu_event(|app, event| {
+            // mac 菜单回调 → 前端复用现有的文件选择入口
+            match event.id().as_ref() {
+                "open-archive" => {
+                    let _ = app.emit("menu-open", "archive");
+                }
+                "pick-files" => {
+                    let _ = app.emit("menu-open", "files");
+                }
+                _ => {}
+            }
+        })
         .invoke_handler(tauri::generate_handler![
             open_archive,
             is_archive,

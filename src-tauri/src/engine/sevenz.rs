@@ -44,12 +44,13 @@ impl ArchiveEngine for SevenZEngine {
             .into_iter()
             .filter(|e| !e.name.is_empty())
             .map(|e| EntryInfo {
-                name: e.name.replace('\\', "/"),
+                name: crate::engine::normalize_name(&e.name.replace('\\', "/")),
                 size: e.size,
                 compressed_size: 0,
                 is_dir: e.is_directory,
                 modified: None,
             })
+            .filter(|e| !crate::engine::junk_entry(&e.name))
             .collect())
     }
 
@@ -73,9 +74,10 @@ impl ArchiveEngine for SevenZEngine {
                     return Err(sevenz_rust::Error::other("已取消"));
                 }
                 let name = entry.name.replace('\\', "/");
-                if entry.is_directory() || name.is_empty() {
+                if entry.is_directory() || name.is_empty() || crate::engine::junk_entry(&name) {
                     return Ok(true);
                 }
+                let name = crate::engine::normalize_name(&name);
                 let target = crate::engine::safe_join(&dest, &name)
                     .map_err(|e| sevenz_rust::Error::other(e.to_string()))?;
                 if let Some(parent) = target.parent() {

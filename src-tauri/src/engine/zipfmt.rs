@@ -6,7 +6,7 @@
 use crate::engine::detect::fix_zip_name;
 use crate::engine::{
     ArchiveEngine, CancelFlag, EntryInfo, ExtractStats, Format, Progress, ProgressCb,
-    check_cancel, is_dir_name, safe_join,
+    check_cancel, is_dir_name, junk_entry, normalize_name, safe_join,
 };
 use std::fs;
 use std::io::{Read, Write};
@@ -31,7 +31,10 @@ impl ZipEngine {
                 .by_index(i)
                 .map_err(|e| std::io::Error::other(format!("读取 ZIP 条目失败: {e}")))?;
             let raw = zf.name_raw().to_vec();
-            let name = fix_zip_name(&raw);
+            let name = normalize_name(&fix_zip_name(&raw));
+            if junk_entry(&name) {
+                continue;
+            }
             let is_dir = zf.is_dir() || is_dir_name(&name);
             if !is_dir {
                 total += zf.size();
@@ -62,7 +65,7 @@ impl ArchiveEngine for ZipEngine {
                 .by_index(i)
                 .map_err(|e| std::io::Error::other(format!("读取 ZIP 条目失败: {e}")))?;
             out.push(EntryInfo {
-                name: fix_zip_name(zf.name_raw()),
+                name: normalize_name(&fix_zip_name(zf.name_raw())),
                 size: zf.size(),
                 compressed_size: zf.compressed_size(),
                 is_dir: zf.is_dir(),
@@ -104,7 +107,10 @@ impl ArchiveEngine for ZipEngine {
                 }
             };
             let raw = zf.name_raw().to_vec();
-            let name = fix_zip_name(&raw);
+            let name = normalize_name(&fix_zip_name(&raw));
+            if junk_entry(&name) {
+                continue;
+            }
             let is_dir = zf.is_dir() || is_dir_name(&name);
             let target = safe_join(dest, &name)?;
             if is_dir {

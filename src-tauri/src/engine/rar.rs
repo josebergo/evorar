@@ -31,7 +31,12 @@ impl RarEngine {
         let mut out = Vec::new();
         for e in iter {
             let entry = e.map_err(|err| std::io::Error::other(format!("读取 RAR 目录失败: {err}")))?;
-            let name = entry.filename.to_string_lossy().replace('\\', "/");
+            let name = crate::engine::normalize_name(
+                &entry.filename.to_string_lossy().replace('\\', "/"),
+            );
+            if crate::engine::junk_entry(&name) {
+                continue;
+            }
             out.push((name, entry.unpacked_size, entry.is_file()));
         }
         Ok(out)
@@ -94,11 +99,19 @@ impl ArchiveEngine for RarEngine {
             let (entry_name, unpacked, is_file) = {
                 let entry = header.entry();
                 (
-                    entry.filename.to_string_lossy().replace('\\', "/"),
+                    crate::engine::normalize_name(
+                        &entry.filename.to_string_lossy().replace('\\', "/"),
+                    ),
                     entry.unpacked_size,
                     entry.is_file(),
                 )
             };
+            if crate::engine::junk_entry(&entry_name) {
+                cursor = header
+                    .skip()
+                    .map_err(|e| std::io::Error::other(format!("跳过条目失败: {e}")))?;
+                continue;
+            }
             progress(&Progress {
                 processed_bytes: stats.bytes,
                 total_bytes,

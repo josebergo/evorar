@@ -35,10 +35,15 @@ evorar 的承诺:**除用户显式操作外零网络请求、零计划任务、�
 
 从 [Releases](https://github.com/josebergo/evorar/releases) 获取:
 
-- `evorar.exe` — 便携版,单文件免安装,双击即用
-- `evorar_x64-setup.exe` — NSIS 安装包(开始菜单/桌面快捷方式/可卸载)
+- `evorar.exe` — Windows 便携版,单文件免安装,双击即用
+- `evorar_x64-setup.exe` — Windows NSIS 安装包(开始菜单/桌面快捷方式/可卸载)
+- `evorar_aarch64.dmg` — macOS 安装包(Apple Silicon),拖入 Applications 即装,删除 .app 即卸载
 
-要求 Windows 10(2004+)/ Windows 11(系统自带 WebView2 运行时)。
+要求 Windows 10(2004+)/ Windows 11(系统自带 WebView2),或 macOS 10.15+(Apple Silicon)。
+
+> **macOS 首次运行**:DMG 未经公证时 Gatekeeper 会拦截,右键点击应用选「打开」,或终端执行
+> `xattr -d com.apple.quarantine /Applications/evorar.app` 后再打开。
+> 在访达中把压缩包的「打开方式」设为 evorar 即可双击直达。
 
 ## 构建
 
@@ -77,7 +82,8 @@ code/
 
 - [x] MVP:解压/压缩/智能解压/GBK 乱码修复/进度取消
 - [x] P1:资源管理器右键菜单(注册表 verb)、文件关联与图标
-- [ ] P1 余项:包内预览、AES-256 加密、分卷
+- [x] macOS 版:Apple Silicon DMG、声明式文件关联、mac 垃圾条目过滤(`__MACOSX/`、`.DS_Store`、`._*`)与 NFD 文件名归一(CI 构建)
+- [ ] P1 余项:包内预览、AES-256 加密、分卷;macOS Finder 服务菜单
 - [ ] P2:自解压 SFX、恢复记录、多语言界面
 
 ## 许可

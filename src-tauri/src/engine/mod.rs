@@ -124,6 +124,24 @@ pub(crate) fn is_dir_name(name: &str) -> bool {
     name.ends_with('/') || name.ends_with('\\')
 }
 
+/// macOS 垃圾条目过滤(design-mac.md §5.1):Finder「压缩」产物里的元数据。
+/// `__MACOSX/` 整棵跳过,`.DS_Store` 与 AppleDouble `._*` 文件跳过;Windows 同样受益。
+pub(crate) fn junk_entry(name: &str) -> bool {
+    let n = name.trim_start_matches(['/', '\\']);
+    if n == "__MACOSX" || n.starts_with("__MACOSX/") {
+        return true;
+    }
+    let base = n.rsplit(['/', '\\']).next().unwrap_or(n);
+    base == ".DS_Store" || (base.starts_with("._") && base.len() > 2)
+}
+
+/// 条目名统一 NFC 规范化:老 macOS(HFS+ 时代)zip 常为 NFD 分解形,
+/// 不归一会造成「看起来同名实为两个文件」(design-mac.md §5.2)
+pub(crate) fn normalize_name(name: &str) -> String {
+    use unicode_normalization::UnicodeNormalization;
+    name.nfc().collect()
+}
+
 /// 工具:解包相对路径到目标目录(拒绝 `..`、绝对路径、盘符 —— 防 zip-slip)
 pub(crate) fn safe_join(dest: &Path, name: &str) -> std::io::Result<PathBuf> {
     let name = name.trim_start_matches('/').trim_start_matches('\\');
@@ -143,4 +161,31 @@ pub(crate) fn safe_join(dest: &Path, name: &str) -> std::io::Result<PathBuf> {
     }
     // 盘符如 "C:" 在 Windows 上会被 Component::Prefix 捕获,上面已拦截
     Ok(dest.join(rel))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn mac_junk_entries_detected() {
+        // Finder「压缩」产物
+        assert!(junk_entry("__MACOSX/dir/._meta"));
+        assert!(junk_entry("__MACOSX"));
+        assert!("/__MACOSX/a.txt" != "" && junk_entry("/__MACOSX/a.txt"));
+        assert!(junk_entry("dir/.DS_Store"));
+        assert!(junk_entry("docs/._cover.png"));
+        // 正常条目不误伤
+        assert!(!junk_entry("normal.txt"));
+        assert!(!junk_entry("dir/.hidden"));
+        assert!(!junk_entry("__MACOSX_like/readme.txt"));
+        assert!(!junk_entry(".dotfile.cfg"));
+    }
+
+    #[test]
+    fn nfc_normalization() {
+        // NFD(e + 组合锐音符)→ NFC(单个 é)
+        assert_eq!(normalize_name("cafe\u{301}.txt"), "caf\u{e9}.txt");
+        assert_eq!(normalize_name("plain.txt"), "plain.txt");
+    }
 }

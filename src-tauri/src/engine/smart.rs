@@ -44,14 +44,22 @@ pub fn top_level_of(entries: &[String]) -> Vec<TopEntry> {
     tops.into_values().collect()
 }
 
-/// 目录名消毒:去掉 Windows 非法字符,防止解压出畸形目录名
+/// 目录名消毒:去掉当前平台文件系统非法字符,防止解压出畸形目录名
+/// (Windows 禁 `\ / : * ? " < > |`;macOS 仅禁 `/ :`,Finder 显示为 `-`)
+#[cfg(target_os = "windows")]
 fn sanitize_stem(stem: &str) -> String {
+    sanitize_with(stem, |c| matches!(c, '\\' | '/' | ':' | '*' | '?' | '"' | '<' | '>' | '|'))
+}
+
+#[cfg(not(target_os = "windows"))]
+fn sanitize_stem(stem: &str) -> String {
+    sanitize_with(stem, |c| matches!(c, '/' | ':'))
+}
+
+fn sanitize_with<F: Fn(char) -> bool>(stem: &str, illegal: F) -> String {
     let cleaned: String = stem
         .chars()
-        .map(|c| match c {
-            '\\' | '/' | ':' | '*' | '?' | '"' | '<' | '>' | '|' => '_',
-            c => c,
-        })
+        .map(|c| if illegal(c) { '_' } else { c })
         .collect();
     let trimmed = cleaned.trim().trim_end_matches('.');
     if trimmed.is_empty() {

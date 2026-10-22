@@ -145,10 +145,12 @@ impl ArchiveEngine for TarballEngine {
         let mut out = Vec::new();
         for entry in ar.entries()? {
             let e = entry?;
-            let name = e
-                .path()?
-                .to_string_lossy()
-                .replace('\\', "/");
+            let name = crate::engine::normalize_name(
+                &e.path()?.to_string_lossy().replace('\\', "/"),
+            );
+            if crate::engine::junk_entry(&name) {
+                continue;
+            }
             out.push(EntryInfo {
                 name,
                 size: e.header().size()?,
@@ -183,6 +185,9 @@ impl ArchiveEngine for TarballEngine {
             let mut ar2 = tar::Archive::new(stream2);
             for e in ar2.entries()? {
                 let e = e?;
+                if crate::engine::junk_entry(&e.path()?.to_string_lossy().replace('\\', "/")) {
+                    continue;
+                }
                 if !e.header().entry_type().is_dir() {
                     files_total += 1;
                     total_bytes += e.header().size()?;
@@ -194,10 +199,12 @@ impl ArchiveEngine for TarballEngine {
         for entry in ar.entries()? {
             check_cancel(cancel)?;
             let mut e = entry?;
-            let name = e
-                .path()?
-                .to_string_lossy()
-                .replace('\\', "/");
+            let name = crate::engine::normalize_name(
+                &e.path()?.to_string_lossy().replace('\\', "/"),
+            );
+            if crate::engine::junk_entry(&name) {
+                continue;
+            }
             if e.header().entry_type().is_dir() {
                 let target = safe_join(dest, &name)?;
                 fs::create_dir_all(target)?;

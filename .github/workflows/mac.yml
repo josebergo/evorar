@@ -1,0 +1,69 @@
+name: macOS build
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Regenerate icon.icns from latest icon.png
+        run: |
+          python3 -m pip install --quiet pillow
+          python3 make_icns.py
+
+      - name: Engine tests
+        working-directory: src-tauri
+        run: cargo test
+
+      - name: Build DMG
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm tauri build
+
+      - name: Collect artifacts
+        run: |
+          mkdir -p dist-mac
+          cp src-tauri/target/release/bundle/dmg/*.dmg dist-mac/
+          cd dist-mac
+          shasum -a 256 *.dmg > checksums.txt
+          cat checksums.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: evorar-macos
+          path: dist-mac/*
+
+      - name: Upload to release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="${GITHUB_REF#refs/tags/}"
+          cd dist-mac
+          for f in *.dmg checksums.txt; do
+            gh release upload "$tag" "$f" --clobber --repo "$GITHUB_REPOSITORY"
+          done

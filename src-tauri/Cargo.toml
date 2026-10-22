@@ -1,6 +1,6 @@
 [package]
 name = "evorar"
-version = "0.2.0"
+version = "0.3.0"
 description = "evorar - 纯静轻快的解压缩工具"
 edition = "2021"
 
@@ -14,9 +14,6 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 tauri = { version = "2", features = [] }
 tauri-plugin-dialog = "2"
-tauri-plugin-single-instance = "2"
-winreg = "0.55"
-windows-sys = { version = "0.59", features = ["Win32_UI_Shell", "Win32_Foundation"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 zip = { version = "2", default-features = false, features = ["deflate", "deflate64", "bzip2", "time", "aes-crypto"] }
@@ -29,6 +26,15 @@ unrar = "0.5"
 encoding_rs = "0.8"
 walkdir = "2"
 parking_lot = "0.12"
+unicode-normalization = "0.1"
+
+[target.'cfg(windows)'.dependencies]
+winreg = "0.55"
+windows-sys = { version = "0.59", features = ["Win32_UI_Shell", "Win32_Foundation"] }
+
+# tauri-plugin-single-instance 仅支持 Windows/Linux
+[target.'cfg(any(windows, target_os = "linux"))'.dependencies]
+tauri-plugin-single-instance = "2"
 
 [profile.release]
 panic = "abort"

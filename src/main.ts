@@ -459,6 +459,12 @@ invoke<LaunchAction | null>("get_pending_launch").then((a) => {
 });
 listen<LaunchAction>("launch-action", (ev) => handleLaunch(ev.payload));
 
+// macOS 应用菜单(文件 → 打开压缩包/选择文件压缩)
+listen<string>("menu-open", (ev) => {
+  if (ev.payload === "archive") $("#pick-archive-btn")!.click();
+  else if (ev.payload === "files") $("#pick-files-btn")!.click();
+});
+
 // ---------- 取消 ----------
 cancelBtn.addEventListener("click", () => {
   if (activeTask != null) {
@@ -590,10 +596,11 @@ $("#about-github")!.addEventListener("click", () => {
 });
 
 // ---------- 系统集成(文件关联 / 右键菜单) ----------
-type Integration = { association: boolean; contextMenu: boolean };
+type Integration = { association: boolean; contextMenu: boolean; platform?: string };
 const settingsModal = $("#settings-modal");
 const assocToggle = $("#assoc-toggle") as HTMLButtonElement;
 const ctxToggle = $("#ctx-toggle") as HTMLButtonElement;
+const macNote = $("#settings-mac-note");
 
 async function refreshIntegration(): Promise<Integration> {
   let cur: Integration = { association: false, contextMenu: false };
@@ -602,6 +609,12 @@ async function refreshIntegration(): Promise<Integration> {
   } catch {
     // 注册表不可读时保持关闭态展示
   }
+  // macOS:关联由「打开方式」管理、服务菜单未提供,只显示引导不开开关
+  const isMac = cur.platform === "macos";
+  if (macNote) macNote.style.display = isMac ? "block" : "none";
+  document.querySelectorAll("#settings-modal .switch-row").forEach((r) => {
+    (r as HTMLElement).style.display = isMac ? "none" : "";
+  });
   assocToggle.classList.toggle("on", cur.association);
   assocToggle.setAttribute("aria-checked", String(cur.association));
   ctxToggle.classList.toggle("on", cur.contextMenu);
