@@ -45,9 +45,11 @@ evorar 的承诺:**除用户显式操作外零网络请求、零计划任务、�
 ```bash
 pnpm install          # 前端依赖
 pnpm tauri dev        # 开发模式(热重载)
-pnpm tauri build      # 发布构建
+pnpm tauri build --no-bundle   # 发布构建(前端内嵌;NSIS 安装包另行手工打包)
 cd src-tauri && cargo test   # 引擎测试(含 GBK 乱码端到端用例)
 ```
+
+> ⚠️ 发布 exe 必须经 `pnpm tauri build` 构建。直接 `cargo build --release` 会得到连 `localhost:5173` 的开发版 exe,脱离 `pnpm tauri dev` 运行时首页报 ERR_CONNECTION_REFUSED。
 
 要求:Rust stable(MSVC)、Node 20+、pnpm。
 
