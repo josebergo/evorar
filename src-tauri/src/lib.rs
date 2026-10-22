@@ -359,7 +359,7 @@ pub fn run() {
                     .build()?;
                 let file_menu = SubmenuBuilder::new(_app, "文件")
                     .item(&MenuItem::with_id(_app, "open-archive", "打开压缩包…", true, Some("CmdOrCtrl+O"))?)
-                    .item(&MenuItem::with_id(_app, "pick-files", "选择文件压缩…", true, None))
+                    .item(&MenuItem::with_id(_app, "pick-files", "选择文件压缩…", true, Option::<&str>::None)?)
                     .build()?;
                 let window_menu = SubmenuBuilder::new(_app, "窗口")
                     .minimize()
