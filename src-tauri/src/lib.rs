@@ -14,9 +14,6 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter, Manager, State};
 
-#[cfg(target_os = "windows")]
-use std::os::windows::process::CommandExt;
-
 // ---------------- 任务管理 ----------------
 
 static NEXT_TASK_ID: AtomicU32 = AtomicU32::new(1);
@@ -196,20 +193,6 @@ async fn reveal_path(path: String) -> Result<(), String> {
     Ok(())
 }
 
-/// 用系统默认浏览器打开外部链接(如 GitHub 仓库)
-#[tauri::command]
-async fn open_url(url: String) -> Result<(), String> {
-    if !url.starts_with("https://") && !url.starts_with("http://") {
-        return Err("仅允许 http(s) 链接".into());
-    }
-    std::process::Command::new("cmd")
-        .args(["/C", "start", "", &url])
-        .creation_flags(0x0800_0000) // CREATE_NO_WINDOW
-        .spawn()
-        .map_err(|e| e.to_string())?;
-    Ok(())
-}
-
 /// 应用版本(关于弹窗展示)
 #[tauri::command]
 fn app_version() -> String {
@@ -317,7 +300,6 @@ pub fn run() {
             compress_files,
             cancel_task,
             reveal_path,
-            open_url,
             app_version,
             get_pending_launch,
             path_exists,

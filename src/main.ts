@@ -584,8 +584,31 @@ aboutModal.addEventListener("click", (e) => {
   if (e.target === aboutModal) closeAbout();
 });
 
-$("#about-github")!.addEventListener("click", () => {
-  invoke("open_url", { url: GITHUB_URL }).catch((e) => toastShow(`打开链接失败:${e}`, true));
+// GitHub 只是跳转地址:点击仅复制,不拉起浏览器、不访问任何页面(零网络请求)
+async function copyText(text: string): Promise<boolean> {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.style.position = "fixed";
+    ta.style.opacity = "0";
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    const ok = document.execCommand("copy");
+    ta.remove();
+    return ok;
+  }
+}
+
+$("#about-github")!.addEventListener("click", async () => {
+  const ok = await copyText(GITHUB_URL);
+  toastShow(
+    ok ? "仓库地址已复制,可粘贴到浏览器打开" : `复制失败,仓库地址:${GITHUB_URL}`,
+    !ok,
+  );
 });
 
 // ---------- 系统集成(文件关联 / 右键菜单) ----------
