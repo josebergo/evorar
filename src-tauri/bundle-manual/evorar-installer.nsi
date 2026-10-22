@@ -3,7 +3,7 @@
 ; Shell 集成全部写 HKCU(免管理员、与应用内设置面板共用同一份键位,见 src/shell.rs)
 Unicode true
 ManifestDPIAware true
-Name "evorar"
+Name "Evorar 艾呀压"
 OutFile "evorar_0.3.0_x64-setup.exe"
 InstallDir "$PROGRAMFILES64\evorar"
 RequestExecutionLevel admin
@@ -84,7 +84,7 @@ Section "evorar 主程序(必需)"
 
   ; 卸载信息
   WriteUninstaller "$INSTDIR\Uninstall.exe"
-  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\evorar" "DisplayName" "evorar"
+  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\evorar" "DisplayName" "Evorar 艾呀压"
   WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\evorar" "DisplayVersion" "0.3.0"
   WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\evorar" "DisplayIcon" "$INSTDIR\evorar.exe"
   WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\evorar" "UninstallString" "$INSTDIR\Uninstall.exe"

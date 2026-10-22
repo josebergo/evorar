@@ -346,7 +346,7 @@ pub fn run() {
             #[cfg(target_os = "macos")]
             {
                 use tauri::menu::{Menu, MenuItem, SubmenuBuilder};
-                let app_menu = SubmenuBuilder::new(_app, "evorar")
+                let app_menu = SubmenuBuilder::new(_app, "Evorar 艾呀压")
                     .about(None)
                     .separator()
                     .services()
