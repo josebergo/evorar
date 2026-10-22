@@ -32,8 +32,9 @@ jobs:
 
       - name: Regenerate icon.icns from latest icon.png
         run: |
-          python3 -m pip install --quiet pillow
-          python3 make_icns.py
+          python3 -m venv /tmp/icnsenv
+          /tmp/icnsenv/bin/pip install --quiet pillow
+          /tmp/icnsenv/bin/python make_icns.py
 
       - name: Engine tests
         working-directory: src-tauri
