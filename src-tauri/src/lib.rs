@@ -4,6 +4,7 @@
 //! 零运营请求、零后台任务、零捆绑;主程序除用户显式操作外不发起任何网络请求。
 
 pub mod engine;
+pub mod shell;
 
 use engine::{CancelFlag, Progress};
 use parking_lot::Mutex;
@@ -11,7 +12,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
@@ -215,10 +216,100 @@ fn app_version() -> String {
     env!("CARGO_PKG_VERSION").to_string()
 }
 
+// ---------------- 启动参数(文件关联 / 右键菜单回调) ----------------
+
+/// 资源管理器 verb 与文件关联都以命令行方式回调主程序:
+/// 进度仍在主窗口呈现且可取消,不做无界面的后台任务。
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(tag = "type", content = "paths", rename_all = "kebab-case")]
+pub enum LaunchAction {
+    Open(Vec<String>),
+    Extract(Vec<String>),
+    ExtractHere(Vec<String>),
+    Compress(Vec<String>),
+    CompressZip(Vec<String>),
+    Compress7z(Vec<String>),
+}
+
+/// 第一个 `--xxx` 识别为动作,其余非 `-` 开头的参数都视为路径
+fn parse_launch_args(args: &[String]) -> Option<LaunchAction> {
+    let mut flag: Option<String> = None;
+    let mut paths = Vec::new();
+    for a in args {
+        if flag.is_none() && a.starts_with("--") {
+            flag = Some(a.clone());
+        } else if !a.starts_with('-') && !a.is_empty() {
+            paths.push(a.clone());
+        }
+    }
+    if paths.is_empty() {
+        return None;
+    }
+    Some(match flag.as_deref() {
+        None | Some("--open") => LaunchAction::Open(paths),
+        Some("--extract") => LaunchAction::Extract(paths),
+        Some("--extract-here") => LaunchAction::ExtractHere(paths),
+        Some("--compress") => LaunchAction::Compress(paths),
+        Some("--compress-zip") => LaunchAction::CompressZip(paths),
+        Some("--compress-7z") => LaunchAction::Compress7z(paths),
+        Some(_) => LaunchAction::Open(paths),
+    })
+}
+
+/// 首次启动携带的动作;页面加载完成后由前端 `get_pending_launch` 取走
+/// (setup 时直接 emit 会早于前端 listener 注册而丢失)
+#[derive(Default)]
+pub struct PendingLaunch(Mutex<Option<LaunchAction>>);
+
+#[tauri::command]
+fn get_pending_launch(state: State<'_, PendingLaunch>) -> Option<LaunchAction> {
+    state.0.lock().clone()
+}
+
+#[tauri::command]
+fn path_exists(path: String) -> bool {
+    std::path::Path::new(&path).exists()
+}
+
+#[tauri::command]
+fn shell_integration_get() -> serde_json::Value {
+    let s = shell::status();
+    serde_json::json!({ "association": s.association, "contextMenu": s.context_menu })
+}
+
+#[tauri::command]
+fn shell_integration_set(association: bool, context_menu: bool) -> Result<(), String> {
+    let exe = std::env::current_exe()
+        .map_err(|e| format!("无法定位程序路径:{e}"))?
+        .to_string_lossy()
+        .into_owned();
+    shell::apply(&exe, shell::IntegrationFlags { association, context_menu })
+        .map_err(|e| format!("写入注册表失败:{e}"))
+}
+
 pub fn run() {
+    let initial = parse_launch_args(
+        &std::env::args_os()
+            .skip(1)
+            .map(|a| a.to_string_lossy().into_owned())
+            .collect::<Vec<_>>(),
+    );
     tauri::Builder::default()
+        // 单实例:已运行时聚焦主窗口,并转发新实例的启动参数
+        .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
+            if let Some(w) = app.get_webview_window("main") {
+                let _ = w.unminimize();
+                let _ = w.show();
+                let _ = w.set_focus();
+            }
+            let rest: Vec<String> = args.iter().skip(1).cloned().collect();
+            if let Some(action) = parse_launch_args(&rest) {
+                let _ = app.emit("launch-action", &action);
+            }
+        }))
         .plugin(tauri_plugin_dialog::init())
         .manage(TaskRegistry::default())
+        .manage(PendingLaunch(Mutex::new(initial)))
         .invoke_handler(tauri::generate_handler![
             open_archive,
             is_archive,
@@ -228,7 +319,32 @@ pub fn run() {
             reveal_path,
             open_url,
             app_version,
+            get_pending_launch,
+            path_exists,
+            shell_integration_get,
+            shell_integration_set,
         ])
         .run(tauri::generate_context!())
         .expect("evorar 启动失败");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_flags_and_paths() {
+        let a = parse_launch_args(&["--extract".into(), r"C:\a b\x.zip".into()]).unwrap();
+        assert!(matches!(a, LaunchAction::Extract(p) if p == [r"C:\a b\x.zip"]));
+
+        let a = parse_launch_args(&[r"D:\y.7z".into()]).unwrap();
+        assert!(matches!(a, LaunchAction::Open(_)));
+
+        // 未知 flag 按打开处理
+        let a = parse_launch_args(&["--future".into(), "z.zip".into()]).unwrap();
+        assert!(matches!(a, LaunchAction::Open(_)));
+
+        assert!(parse_launch_args(&["--extract".into()]).is_none());
+        assert!(parse_launch_args(&[]).is_none());
+    }
 }

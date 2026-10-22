@@ -598,3 +598,87 @@ body.dragging .content::after {
 ::-webkit-scrollbar-thumb:hover {
   background: var(--text-sub);
 }
+
+/* ---------- 系统集成设置 ---------- */
+.modal.settings-modal {
+  width: 400px;
+  gap: 13px;
+  align-items: stretch;
+  text-align: left;
+}
+
+.modal-sub {
+  font-size: 12px;
+  color: var(--text-sub);
+  line-height: 1.6;
+}
+
+.switch-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.switch-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.switch-name {
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
+.switch-desc {
+  font-size: 11.5px;
+  color: var(--text-sub);
+  margin-top: 3px;
+  line-height: 1.55;
+}
+
+.switch {
+  flex: none;
+  width: 40px;
+  height: 22px;
+  border-radius: 11px;
+  border: 1px solid var(--border);
+  background: var(--track);
+  position: relative;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.switch::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #ffffff;
+  transition: transform 0.15s;
+}
+
+.switch.on {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.switch.on::after {
+  transform: translateX(18px);
+}
+
+.switch:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.switch-note {
+  font-size: 11px;
+  color: var(--text-sub);
+  line-height: 1.6;
+}

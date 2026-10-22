@@ -15,6 +15,7 @@
           <span class="brand-name">evorar</span>
         </div>
         <nav class="menu">
+          <button id="menu-settings" class="menu-item">⚙ 集成</button>
           <button id="menu-about" class="menu-item">关于</button>
           <button id="home-btn" class="menu-item" title="返回首页">⟲ 主页</button>
         </nav>
@@ -109,6 +110,38 @@
           </button>
           <div class="modal-license">MIT License · Tauri + Rust</div>
           <button id="about-close" class="link-btn">关闭</button>
+        </div>
+      </div>
+
+      <!-- 系统集成设置 -->
+      <div id="settings-modal" class="modal-mask">
+        <div class="modal settings-modal">
+          <div class="modal-title">系统集成</div>
+          <div class="modal-sub">
+            仅写入当前用户注册表,无需管理员;关闭开关即还原,卸载自动清理
+          </div>
+          <div class="switch-row">
+            <div class="switch-text">
+              <div class="switch-name">关联压缩包格式</div>
+              <div class="switch-desc">
+                设为 ZIP / 7Z / RAR / TAR / GZ / BZ2 / XZ 等的默认打开方式,并显示 evorar 图标
+              </div>
+            </div>
+            <button id="assoc-toggle" class="switch" role="switch" aria-checked="false"></button>
+          </div>
+          <div class="switch-row">
+            <div class="switch-text">
+              <div class="switch-name">资源管理器右键菜单</div>
+              <div class="switch-desc">
+                文件 / 文件夹右键:用 evorar 压缩、压缩为 ZIP、压缩为 7Z;压缩包右键:智能解压、解压到当前文件夹
+              </div>
+            </div>
+            <button id="ctx-toggle" class="switch" role="switch" aria-checked="false"></button>
+          </div>
+          <div class="switch-note">
+            Windows 11 中菜单项位于右键「显示更多选项」内;若某格式已被系统记住其他默认程序,请在「打开方式」里选择 evorar 设为始终。
+          </div>
+          <button id="settings-close" class="link-btn">关闭</button>
         </div>
       </div>
     </div>

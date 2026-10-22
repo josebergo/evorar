@@ -23,6 +23,15 @@ type ArchiveInfo = {
   singleTopDir: boolean;
 };
 
+// 启动动作:双击关联文件 / 资源管理器右键菜单通过命令行回调主程序
+type LaunchAction =
+  | { type: "open"; paths: string[] }
+  | { type: "extract"; paths: string[] }
+  | { type: "extract-here"; paths: string[] }
+  | { type: "compress"; paths: string[] }
+  | { type: "compress-zip"; paths: string[] }
+  | { type: "compress-7z"; paths: string[] };
+
 type CompressSource = { path: string; name: string; size: number };
 
 type TaskProgress = {
@@ -48,6 +57,7 @@ let compressFormat: "zip" | "7z" = "zip";
 let compressLevel: "fast" | "normal" | "max" = "normal";
 let activeTask: number | null = null;
 let lastOutputDir: string | null = null;
+let lastExtractDest: string | null = null;
 
 // ---------- DOM ----------
 const $ = <T extends HTMLElement = HTMLElement>(sel: string) =>
@@ -96,6 +106,19 @@ function fmtSize(bytes: number): string {
 
 function baseName(p: string): string {
   return p.replace(/[\\/]+$/, "").split(/[\\/]/).pop() ?? p;
+}
+
+function dirName(p: string): string {
+  const i = Math.max(p.lastIndexOf("\\"), p.lastIndexOf("/"));
+  return i > 0 ? p.slice(0, i) : ".";
+}
+
+async function pathExists(p: string): Promise<boolean> {
+  try {
+    return await invoke<boolean>("path_exists", { path: p });
+  } catch {
+    return false;
+  }
 }
 
 function extName(p: string): string {
@@ -265,6 +288,7 @@ function toastShow(msg: string, isError = false, outputDir?: string) {
 // ---------- 解压 ----------
 async function startExtract(dest: string, password?: string) {
   if (!archive) return;
+  lastExtractDest = dest;
   try {
     const taskId = await invoke<number>("extract_archive", {
       path: archive.path,
@@ -347,6 +371,94 @@ $("#compress-btn")!.addEventListener("click", async () => {
   }
 });
 
+// ---------- 启动动作(关联双击 / 右键菜单) ----------
+// 右键「压缩为 ZIP/7Z」:落盘到同目录,重名自动加序号
+async function uniqueDest(candidate: string): Promise<string> {
+  if (!(await pathExists(candidate))) return candidate;
+  const slash = Math.max(candidate.lastIndexOf("\\"), candidate.lastIndexOf("/"));
+  const dot = candidate.lastIndexOf(".");
+  const hasExt = dot > slash;
+  const stem = hasExt ? candidate.slice(0, dot) : candidate;
+  const ext = hasExt ? candidate.slice(dot) : "";
+  for (let i = 2; i < 1000; i++) {
+    const next = `${stem} (${i})${ext}`;
+    if (!(await pathExists(next))) return next;
+  }
+  return `${stem} (${Date.now()})${ext}`;
+}
+
+async function quickCompress(paths: string[], format: "zip" | "7z") {
+  addCompressSources(paths);
+  compressFormat = format;
+  refreshFormatButtons();
+  const parent = dirName(paths[0]);
+  const stem =
+    paths.length === 1
+      ? baseName(paths[0]).replace(/\.[^.]+$/, "") || baseName(paths[0])
+      : "新建压缩包";
+  const dest = await uniqueDest(`${parent}\\${stem}.${format}`);
+  try {
+    const taskId = await invoke<number>("compress_files", {
+      args: { sources: paths, dest, format, level: "normal" },
+      password: null,
+    });
+    setProgress({ taskId, processedBytes: 0, totalBytes: 0, currentFile: "", filesDone: 0, filesTotal: 0 }, true);
+  } catch (e) {
+    toastShow(`无法开始压缩:${e}`, true);
+  }
+}
+
+// 多选压缩包右键解压时逐个处理,复用现有进度/取消/完成提示
+const extractQueue: { path: string; here: boolean }[] = [];
+let queueBusy = false;
+
+async function pumpExtractQueue() {
+  if (queueBusy) return;
+  const next = extractQueue.shift();
+  if (!next) return;
+  queueBusy = true;
+  await openArchive(next.path);
+  if (!archive) {
+    queueBusy = false;
+    pumpExtractQueue();
+    return;
+  }
+  const dest = next.here ? dirName(archive.path) : archive.suggestedDir;
+  startExtract(dest);
+}
+
+async function handleLaunch(action: LaunchAction) {
+  const paths = action.paths ?? [];
+  if (paths.length === 0) return;
+  switch (action.type) {
+    case "open":
+      await openArchive(paths[0]);
+      break;
+    case "extract":
+    case "extract-here":
+      for (const p of paths) {
+        extractQueue.push({ path: p, here: action.type === "extract-here" });
+      }
+      pumpExtractQueue();
+      break;
+    case "compress":
+      addCompressSources(paths);
+      break;
+    case "compress-zip":
+      await quickCompress(paths, "zip");
+      break;
+    case "compress-7z":
+      await quickCompress(paths, "7z");
+      break;
+  }
+}
+
+// 首次启动:命令行携带的动作(页面就绪后取走);运行中:单实例插件转发
+invoke<LaunchAction | null>("get_pending_launch").then((a) => {
+  if (a) handleLaunch(a);
+});
+listen<LaunchAction>("launch-action", (ev) => handleLaunch(ev.payload));
+
 // ---------- 取消 ----------
 cancelBtn.addEventListener("click", () => {
   if (activeTask != null) {
@@ -363,6 +475,8 @@ listen<TaskProgress>("task-progress", (ev) => {
 listen<TaskDone>("task-done", (ev) => {
   const d = ev.payload;
   setProgress(null);
+  queueBusy = false;
+  const moreQueued = extractQueue.length > 0;
   if (d.ok && d.stats) {
     lastOutputDir = d.stats.outputDir;
     const target = d.stats.outputDir;
@@ -379,12 +493,13 @@ listen<TaskDone>("task-done", (ev) => {
     if (err.includes("密码") || err.toLowerCase().includes("password")) {
       const pw = prompt("该压缩包已加密,请输入密码:");
       if (pw && archive) {
-        startExtract(archive.suggestedDir, pw);
+        startExtract(lastExtractDest ?? archive.suggestedDir, pw);
         return;
       }
     }
     toastShow(`失败:${err}`, true);
   }
+  if (moreQueued) pumpExtractQueue();
 });
 
 // 拖放:Tauri 原生事件提供绝对路径
@@ -471,6 +586,61 @@ aboutModal.addEventListener("click", (e) => {
 
 $("#about-github")!.addEventListener("click", () => {
   invoke("open_url", { url: GITHUB_URL }).catch((e) => toastShow(`打开链接失败:${e}`, true));
+});
+
+// ---------- 系统集成(文件关联 / 右键菜单) ----------
+type Integration = { association: boolean; contextMenu: boolean };
+const settingsModal = $("#settings-modal");
+const assocToggle = $("#assoc-toggle") as HTMLButtonElement;
+const ctxToggle = $("#ctx-toggle") as HTMLButtonElement;
+
+async function refreshIntegration(): Promise<Integration> {
+  let cur: Integration = { association: false, contextMenu: false };
+  try {
+    cur = await invoke<Integration>("shell_integration_get");
+  } catch {
+    // 注册表不可读时保持关闭态展示
+  }
+  assocToggle.classList.toggle("on", cur.association);
+  assocToggle.setAttribute("aria-checked", String(cur.association));
+  ctxToggle.classList.toggle("on", cur.contextMenu);
+  ctxToggle.setAttribute("aria-checked", String(cur.contextMenu));
+  return cur;
+}
+
+async function applyIntegration(next: Integration, btn: HTMLButtonElement) {
+  btn.disabled = true;
+  try {
+    await invoke("shell_integration_set", next);
+    toastShow("已更新系统关联");
+  } catch (e) {
+    toastShow(`更新失败:${e}`, true);
+  }
+  await refreshIntegration();
+  btn.disabled = false;
+}
+
+assocToggle.addEventListener("click", async () => {
+  const cur = await refreshIntegration();
+  await applyIntegration({ ...cur, association: !cur.association }, assocToggle);
+});
+
+ctxToggle.addEventListener("click", async () => {
+  const cur = await refreshIntegration();
+  await applyIntegration({ ...cur, contextMenu: !cur.contextMenu }, ctxToggle);
+});
+
+function closeSettings() {
+  settingsModal.classList.remove("visible");
+}
+
+$("#menu-settings")!.addEventListener("click", () => {
+  refreshIntegration();
+  settingsModal.classList.add("visible");
+});
+$("#settings-close")!.addEventListener("click", closeSettings);
+settingsModal.addEventListener("click", (e) => {
+  if (e.target === settingsModal) closeSettings();
 });
 
 // 初始视图
