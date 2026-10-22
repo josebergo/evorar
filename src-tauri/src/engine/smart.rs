@@ -97,6 +97,10 @@ mod tests {
         let entries = vec!["a.txt".to_string(), "b.txt".to_string()];
         let tops = top_level_of(&entries);
         let dest = smart_dest(Path::new("D:/out"), "a:b?c", &tops);
+        // 两平台都禁 `:`,故首段必为 a_b;`?` 仅 Windows 非法
+        #[cfg(target_os = "windows")]
         assert_eq!(dest, PathBuf::from("D:/out/a_b_c"));
+        #[cfg(not(target_os = "windows"))]
+        assert_eq!(dest, PathBuf::from("D:/out/a_b?c"));
     }
 }

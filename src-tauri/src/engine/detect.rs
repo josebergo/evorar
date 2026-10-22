@@ -129,6 +129,8 @@ mod tests {
     fn safe_names() {
         assert!(crate::engine::safe_join(Path::new("d:/out"), "a/b.txt").is_ok());
         assert!(crate::engine::safe_join(Path::new("d:/out"), "../evil.txt").is_err());
+        // 盘符是 Windows 概念(Components::Prefix);mac 上 "C:" 只是普通目录名
+        #[cfg(target_os = "windows")]
         assert!(crate::engine::safe_join(Path::new("d:/out"), "C:/evil.txt").is_err());
         assert!(crate::engine::safe_join(Path::new("d:/out"), "/abs.txt").is_ok());
     }
