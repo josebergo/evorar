@@ -129,10 +129,13 @@ Section "资源管理器集成(右键菜单与文件关联)" SEC_SHELL
   !insertmacro WriteVerb "Directory\Background" "evorar.compresszip" "evorar 压缩为 ZIP" "--compress-zip" "%V"
   !insertmacro WriteVerb "Directory\Background" "evorar.compress7z" "evorar 压缩为 7Z" "--compress-7z" "%V"
 
-  ; 状态标记(应用内「集成」面板据此显示开关状态)
+  ; 状态标记(应用内「设置」面板据此显示开关状态)
   WriteRegStr HKCU "Software\evorar\Shell" "Exe" "$INSTDIR\evorar.exe"
   WriteRegDWORD HKCU "Software\evorar\Shell" "Association" 1
   WriteRegDWORD HKCU "Software\evorar\Shell" "ContextMenu" 1
+
+  ; 通知资源管理器关联已变化:立即刷新文件图标与「打开方式」,免注销/重启
+  System::Call 'shell32::SHChangeNotify(i 0x08000000, i 0, p 0, p 0)'
 SectionEnd
 
 Section "Uninstall"
@@ -169,4 +172,7 @@ Section "Uninstall"
   DeleteRegKey HKCU "Software\Classes\Directory\Background\shell\evorar.compresszip"
   DeleteRegKey HKCU "Software\Classes\Directory\Background\shell\evorar.compress7z"
   DeleteRegKey HKCU "Software\evorar\Shell"
+
+  ; 还原关联后同样广播刷新
+  System::Call 'shell32::SHChangeNotify(i 0x08000000, i 0, p 0, p 0)'
 SectionEnd
