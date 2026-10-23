@@ -4,7 +4,7 @@
 Unicode true
 ManifestDPIAware true
 Name "Evorar 艾呀压"
-OutFile "evorar_0.3.2_x64-setup.exe"
+OutFile "evorar_0.3.3_x64-setup.exe"
 InstallDir "$PROGRAMFILES64\evorar"
 RequestExecutionLevel admin
 SetCompressor /SOLID lzma
@@ -88,7 +88,7 @@ Section "evorar 主程序(必需)"
   WriteUninstaller "$INSTDIR\Uninstall.exe"
   WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\evorar" "DisplayName" "Evorar 艾呀压"
   WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\evorar" "Publisher" "码禾数字 (Mh Digit)"
-  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\evorar" "DisplayVersion" "0.3.2"
+  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\evorar" "DisplayVersion" "0.3.3"
   WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\evorar" "DisplayIcon" "$INSTDIR\evorar.exe"
   WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\evorar" "UninstallString" "$INSTDIR\Uninstall.exe"
   WriteRegDWORD HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\evorar" "NoModify" 1

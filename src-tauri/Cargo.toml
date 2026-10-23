@@ -1,6 +1,6 @@
 [package]
 name = "evorar"
-version = "0.3.2"
+version = "0.3.3"
 description = "evorar - 纯静轻快的解压缩工具"
 edition = "2021"
 
