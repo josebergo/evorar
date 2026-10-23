@@ -11,6 +11,8 @@ SetCompressor /SOLID lzma
 
 !include "MUI2.nsh"
 !include "LogicLib.nsh"
+!include "FileFunc.nsh"
+!insertmacro GetSize
 
 !define MUI_ABORTWARNING
 !define MUI_ICON "icon.ico"
@@ -82,14 +84,18 @@ Section "evorar 主程序(必需)"
   CreateShortCut "$SMPROGRAMS\evorar\evorar.lnk" "$INSTDIR\evorar.exe"
   CreateShortCut "$DESKTOP\evorar.lnk" "$INSTDIR\evorar.exe"
 
-  ; 卸载信息
+  ; 卸载信息(设置→应用里显示发布者与大小)
   WriteUninstaller "$INSTDIR\Uninstall.exe"
   WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\evorar" "DisplayName" "Evorar 艾呀压"
+  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\evorar" "Publisher" "码和数字 (Mh Digit)"
   WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\evorar" "DisplayVersion" "0.3.2"
   WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\evorar" "DisplayIcon" "$INSTDIR\evorar.exe"
   WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\evorar" "UninstallString" "$INSTDIR\Uninstall.exe"
   WriteRegDWORD HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\evorar" "NoModify" 1
   WriteRegDWORD HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\evorar" "NoRepair" 1
+  ; 实测安装目录体积(KB)写入 EstimatedSize,应用列表的「大小」不再为空
+  ${GetSize} "$INSTDIR" "/S=0K" $0 $1 $2
+  WriteRegDWORD HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\evorar" "EstimatedSize" $0
 SectionEnd
 
 Section "资源管理器集成(右键菜单与文件关联)" SEC_SHELL
