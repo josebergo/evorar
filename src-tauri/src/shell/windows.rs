@@ -183,7 +183,9 @@ fn backup_ext_default(hkcu: &RegKey, dot: &str) -> io::Result<()> {
     match current {
         Some(v) => b.set_value("", &v)?,
         None => {
-            b.delete_value("")?;
+            // 清掉上一轮备份可能残留的旧值;键是新建的时本就没有默认值,
+            // 删除会返回 os error 2(找不到指定的文件),必须尽力而为而非 `?`
+            let _ = b.delete_value("");
             b.set_value("Absent", &1u32)?
         }
     }
@@ -432,5 +434,24 @@ mod tests {
         apply(new, IntegrationFlags { association: false, context_menu: false }).unwrap();
         assert!(needs_repair(new).is_none(), "集成已关不触发修复");
         assert!(needs_repair(old).is_none());
+    }
+
+    /// 回归(v0.3.1 用户报障):扩展名键存在但默认值被删(绿色版时期开关过
+    /// 关联、或卸载还原后的残留状态)时,重新开启关联在备份分支对新建键
+    /// delete_value("") 会得到 os error 2,整体写入被 `?` 炸掉
+    #[test]
+    fn apply_tolerates_ext_without_default_value() {
+        let _reg = REG_GUARD.lock();
+        let hkcu = RegKey::predef(HKEY_CURRENT_USER);
+        // 把 .tbz2 制造成「键在、无默认值」的状态
+        let k = hkcu.create_subkey(format!("{CLASSES}\\.tbz2")).unwrap().0;
+        let _ = k.delete_value("");
+
+        let exe = r"C:\reg-test\evorar.exe";
+        apply(exe, IntegrationFlags { association: true, context_menu: true })
+            .expect("扩展名无默认值不应导致写入失败");
+
+        // 清场还原
+        apply(exe, IntegrationFlags { association: false, context_menu: false }).unwrap();
     }
 }
