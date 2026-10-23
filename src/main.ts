@@ -564,8 +564,12 @@ $("#pick-files-btn")!.addEventListener("click", async () => {
   if (Array.isArray(files) && files.length > 0) addCompressSources(files);
 });
 
-// 回到空态
-$("#home-btn")!.addEventListener("click", reset);
+// 主页:跳转官网,交给系统默认浏览器打开,同时回到空态
+const HOME_URL = "https://evorar.pages.dev/";
+$("#home-btn")!.addEventListener("click", () => {
+  invoke("open_url", { url: HOME_URL }).catch((e) => toastShow(`打开链接失败:${e}`, true));
+  reset();
+});
 
 // ---------- 关于弹窗 ----------
 const GITHUB_URL = "https://github.com/josebergo/evorar";
