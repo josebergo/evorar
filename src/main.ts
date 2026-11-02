@@ -127,19 +127,74 @@ function extName(p: string): string {
   return i > 0 ? b.slice(i + 1).toLowerCase() : "";
 }
 
-function iconFor(name: string, isDir: boolean): string {
-  if (isDir) return "📁";
-  const ext = extName(name);
-  if (["png", "jpg", "jpeg", "gif", "webp", "bmp", "svg"].includes(ext)) return "🖼️";
-  if (["mp4", "mkv", "avi", "mov"].includes(ext)) return "🎬";
-  if (["mp3", "flac", "wav", "aac"].includes(ext)) return "🎵";
-  if (["pdf"].includes(ext)) return "📕";
-  if (["doc", "docx", "txt", "md"].includes(ext)) return "📄";
-  if (["xls", "xlsx", "csv"].includes(ext)) return "📊";
-  if (["exe", "msi", "bat"].includes(ext)) return "⚙️";
-  if (["zip", "7z", "rar", "tar", "gz", "bz2", "xz"].includes(ext)) return "🗜️";
-  return "📄";
+// ---------- 文件类型图标(彩色 SVG:渐变文档 + 扩展名标签)----------
+const GRADIENTS: Record<string, [string, string]> = {
+  dir: ["#4a7de8", "#2f5bcd"],
+  dirFront: ["#8ab5f8", "#4a7de8"],
+  video: ["#a78bfa", "#6d28d9"],
+  audio: ["#fb7185", "#e11d48"],
+  image: ["#34d399", "#047857"],
+  pdf: ["#f87171", "#dc2626"],
+  word: ["#60a5fa", "#2563eb"],
+  excel: ["#4ade80", "#166534"],
+  ppt: ["#fb923c", "#c2410c"],
+  text: ["#94a3b8", "#526175"],
+  code: ["#38bdf8", "#0369a1"],
+  archive: ["#fbbf24", "#b45309"],
+  apk: ["#84cc16", "#3f6212"],
+  exe: ["#7b8ca8", "#2c3a52"],
+  font: ["#e879f9", "#a21caf"],
+  plain: ["#a3b1c6", "#66788f"],
+};
+
+const EXT_GROUPS: Record<string, string[]> = {
+  video: ["mp4", "mkv", "avi", "mov", "webm", "flv", "wmv", "m4v", "mpg", "mpeg", "ts", "rmvb", "rm", "3gp", "m2ts"],
+  audio: ["mp3", "flac", "wav", "aac", "ogg", "m4a", "wma", "opus", "aiff", "mid", "midi"],
+  image: ["png", "jpg", "jpeg", "gif", "webp", "bmp", "svg", "ico", "tif", "tiff", "heic", "avif", "psd", "ai", "raw"],
+  pdf: ["pdf"],
+  word: ["doc", "docx", "rtf", "odt", "pages"],
+  excel: ["xls", "xlsx", "xlsb", "csv", "ods", "numbers"],
+  ppt: ["ppt", "pptx", "odp", "key"],
+  text: ["txt", "md", "log", "nfo", "ini", "cfg", "conf", "list"],
+  code: ["js", "jsx", "ts", "tsx", "html", "htm", "css", "scss", "less", "json", "xml", "yml", "yaml", "toml", "py", "rs", "go", "java", "c", "h", "cpp", "hpp", "cs", "php", "rb", "kt", "swift", "vue", "svelte", "dart", "lua", "sql", "sh", "bash", "zsh", "ps1", "gradle", "properties"],
+  archive: ["zip", "7z", "rar", "tar", "gz", "tgz", "bz2", "tbz2", "xz", "txz", "zst", "lz4", "cab", "iso", "dmg", "arj", "lzh"],
+  apk: ["apk", "aab", "xapk"],
+  exe: ["exe", "msi", "app", "appx", "deb", "rpm", "bat", "cmd", "com", "dll", "so", "dylib", "bin"],
+  font: ["ttf", "otf", "woff", "woff2", "eot"],
+};
+
+const EXT_GROUP: Record<string, string> = {};
+for (const [g, exts] of Object.entries(EXT_GROUPS)) {
+  for (const e of exts) EXT_GROUP[e] = g;
 }
+
+function iconFor(name: string, isDir: boolean): string {
+  if (isDir) {
+    return `<svg viewBox="0 0 44 48" aria-hidden="true"><path d="M4 14a4 4 0 0 1 4-4h9l4.5 4.5H36a4 4 0 0 1 4 4V36a4 4 0 0 1-4 4H8a4 4 0 0 1-4-4V14Z" fill="url(#evi-dir)"/><rect x="4" y="20" width="36" height="20" rx="4" fill="url(#evi-dirFront)"/></svg>`;
+  }
+  const ext = extName(name);
+  const g = EXT_GROUP[ext] ?? "plain";
+  const label = ext ? ext.toUpperCase().slice(0, 6) : "FILE";
+  const size = label.length <= 3 ? 12 : label.length === 4 ? 10 : label.length === 5 ? 8.5 : 7.5;
+  // textLength 兜底:中文字体环境下拉丁字母偏宽,强制收进文档主体,任何字体都不溢出
+  const maxW = [24, 25, 26, 27][Math.min(label.length, 6) - 3] ?? 27;
+  const fit = label.length <= 2 ? "" : ` textLength="${maxW}" lengthAdjust="spacingAndGlyphs"`;
+  return `<svg viewBox="0 0 44 48" aria-hidden="true"><path d="M10 4h17l11 11v29a4 4 0 0 1-4 4H10a4 4 0 0 1-4-4V8a4 4 0 0 1 4-4Z" fill="url(#evi-${g})"/><path d="M27 4l11 11h-9a2 2 0 0 1-2-2V4Z" fill="#fff" opacity=".4"/><text x="22" y="28" text-anchor="middle" dominant-baseline="central" font-size="${size}" font-weight="700"${fit} fill="#fff">${label}</text></svg>`;
+}
+
+// 渐变统一定义一次,行内图标只做引用,超大列表也不重复下发颜色
+(function injectIconDefs() {
+  const defs = Object.entries(GRADIENTS)
+    .map(
+      ([id, [a, b]]) =>
+        `<linearGradient id="evi-${id}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${a}"/><stop offset="1" stop-color="${b}"/></linearGradient>`
+    )
+    .join("");
+  const holder = document.createElement("div");
+  holder.style.display = "none";
+  holder.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg">${defs}</svg>`;
+  document.body.appendChild(holder);
+})();
 
 // ---------- 视图切换 ----------
 function showView(v: HTMLElement) {

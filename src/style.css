@@ -251,9 +251,21 @@ body.dragging .content::after {
 }
 
 .entry-ico {
-  width: 20px;
-  text-align: center;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
   flex: none;
+}
+
+.entry-ico svg {
+  width: 22px;
+  height: 24px;
+  display: block;
+}
+
+.entry-ico text {
+  font-family: inherit;
 }
 
 .entry-name {
