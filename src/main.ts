@@ -317,6 +317,17 @@ $("#extract-to-btn")!.addEventListener("click", async () => {
 });
 
 // ---------- 压缩 ----------
+/** 压缩包名建议:单选 → 选中项名(文件去扩展名);
+ *  多选 → 所在文件夹名(对齐 WinRAR/7-Zip),根目录等取不到时退回「新建压缩包」 */
+function suggestArchiveStem(paths: string[]): string {
+  if (paths.length === 1) {
+    const base = baseName(paths[0]);
+    return base.replace(/\.[^.]+$/, "") || base;
+  }
+  const folder = baseName(dirName(paths[0]));
+  return folder && !/^[A-Za-z]:$/.test(folder) && folder !== "." ? folder : "新建压缩包";
+}
+
 function refreshFormatButtons() {
   fmtZipBtn.classList.toggle("active", compressFormat === "zip");
   fmt7zBtn.classList.toggle("active", compressFormat === "7z");
@@ -342,17 +353,14 @@ refreshFormatButtons();
 
 $("#compress-btn")!.addEventListener("click", async () => {
   if (compressSources.length === 0) return;
-  const first = compressSources[0];
-  const suggest =
-    compressSources.length === 1
-      ? first.name.replace(/\.[^.]+$/, "")
-      : "新建压缩包";
+  const paths = compressSources.map((c) => c.path);
+  const ext = compressFormat === "zip" ? "zip" : "7z";
+  // 对话框直接落在源文件所在目录,预填不重名的建议名(压缩到当前文件夹)
+  const suggest = await uniqueDest(`${dirName(paths[0])}\\${suggestArchiveStem(paths)}.${ext}`);
   const dest = await dialogSave({
     title: "保存压缩包",
-    defaultPath: `${suggest}.${compressFormat === "zip" ? "zip" : "7z"}`,
-    filters: [
-      { name: compressFormat === "zip" ? "ZIP 压缩包" : "7Z 压缩包", extensions: [compressFormat] },
-    ],
+    defaultPath: suggest,
+    filters: [{ name: ext === "zip" ? "ZIP 压缩包" : "7Z 压缩包", extensions: [ext] }],
   });
   if (typeof dest !== "string" || !dest) return;
   try {
@@ -388,15 +396,12 @@ async function uniqueDest(candidate: string): Promise<string> {
 }
 
 async function quickCompress(paths: string[], format: "zip" | "7z") {
+  compressSources = []; // 快速压缩只包含本次右键选中的文件
   addCompressSources(paths);
   compressFormat = format;
   refreshFormatButtons();
-  const parent = dirName(paths[0]);
-  const stem =
-    paths.length === 1
-      ? baseName(paths[0]).replace(/\.[^.]+$/, "") || baseName(paths[0])
-      : "新建压缩包";
-  const dest = await uniqueDest(`${parent}\\${stem}.${format}`);
+  // 压缩包落在选中项所在目录(当前文件夹),多选时以文件夹名命名
+  const dest = await uniqueDest(`${dirName(paths[0])}\\${suggestArchiveStem(paths)}.${format}`);
   try {
     const taskId = await invoke<number>("compress_files", {
       args: { sources: paths, dest, format, level: "normal" },
@@ -406,6 +411,33 @@ async function quickCompress(paths: string[], format: "zip" | "7z") {
   } catch (e) {
     toastShow(`无法开始压缩:${e}`, true);
   }
+}
+
+// 多选右键时,Explorer 对静态 verb 是「每个文件各启动一次进程」,单实例插件
+// 把每次启动的参数转发到这里 → 用时间窗把同一动作的多路到达合并成一次压缩,
+// 才能实现「选中了哪些文件,就压缩哪些文件」(合进同一个包)。
+// 只按到达间隔(300ms)合批、不设总窗:人工两次独立右键不可能间隔 300ms,
+// 而大额多选在慢机上可能滴流超过 1s,硬截断会把一批拆成两个包
+let quickBuf: { type: "compress-zip" | "compress-7z"; paths: string[] } | null = null;
+let quickTimer: ReturnType<typeof setTimeout> | null = null;
+
+function flushQuickBuffer() {
+  if (quickTimer) clearTimeout(quickTimer);
+  quickTimer = null;
+  const buf = quickBuf;
+  quickBuf = null;
+  if (buf) quickCompress(buf.paths, buf.type === "compress-zip" ? "zip" : "7z");
+}
+
+function bufferQuickLaunch(type: "compress-zip" | "compress-7z", paths: string[]) {
+  if (quickBuf && quickBuf.type !== type) flushQuickBuffer(); // 动作切换,先执行积压
+  quickBuf = {
+    type,
+    paths: [...(quickBuf?.paths ?? []), ...paths].filter((p, i, a) => a.indexOf(p) === i),
+  };
+  // 到达间隔 300ms 内视为同一批多选,静默 300ms 后提交
+  if (quickTimer) clearTimeout(quickTimer);
+  quickTimer = setTimeout(flushQuickBuffer, 300);
 }
 
 // 多选压缩包右键解压时逐个处理,复用现有进度/取消/完成提示
@@ -442,13 +474,11 @@ async function handleLaunch(action: LaunchAction) {
       pumpExtractQueue();
       break;
     case "compress":
-      addCompressSources(paths);
+      addCompressSources(paths); // 逐文件到达也天然合并(列表去重追加)
       break;
     case "compress-zip":
-      await quickCompress(paths, "zip");
-      break;
     case "compress-7z":
-      await quickCompress(paths, "7z");
+      bufferQuickLaunch(action.type, paths);
       break;
   }
 }

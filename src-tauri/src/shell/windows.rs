@@ -10,6 +10,12 @@
 //! - `Software\Classes\{*,Directory,Directory\Background}\shell\evorar.*`
 //!                                            所有文件/文件夹/空白处的压缩菜单
 //! - `Software\evorar\Shell`                  状态标记 + 关联前原值备份
+//!
+//! 多选说明:静态 verb 的 `%1` 一次只带一个文件,Explorer 对多选是「每文件
+//! 各启动一次进程」(设 `MultiSelectModel=Player` 也只解除数量上限,见
+//! how-to-employ-the-verb-selection-model)。因此压缩/解压 verb 均声明 Player
+//! 以免大额多选时菜单项被隐藏,真正的「多选合成一次任务」由主程序的
+//! 单实例转发 + 前端时间窗合并完成,不引入 Shell 扩展 DLL。
 
 use std::io;
 use winreg::enums::{HKEY_CURRENT_USER, KEY_ALL_ACCESS, KEY_READ, KEY_WRITE};
@@ -25,6 +31,10 @@ pub const ARCHIVE_EXTS: &[&str] = &[
 const MARKER_ROOT: &str = "Software\\evorar\\Shell";
 const BACKUP_ROOT: &str = "Software\\evorar\\Shell\\Backup";
 const CLASSES: &str = "Software\\Classes";
+
+/// 注册表布局版本:verb 键值结构变化时 +1,老安装据此触发静默重写
+/// (v2:压缩/解压 verb 增加 MultiSelectModel=Player)
+const LAYOUT_VERSION: u32 = 2;
 
 // ---------------- 纯函数(布局构造,可单测) ----------------
 
@@ -45,20 +55,23 @@ pub struct VerbSpec {
     pub key: &'static str,
     pub label: &'static str,
     pub flag: Option<&'static str>,
+    /// 写入 `MultiSelectModel=Player`:解除 Document 模型的多选数量上限
+    /// (Win7≤15 / Win8+≤100,超出时菜单项直接隐藏)
+    pub multi_select: bool,
 }
 
 /// 所有文件/文件夹/文件夹空白处共用的压缩菜单
 pub const CONTEXT_VERBS: &[VerbSpec] = &[
-    VerbSpec { key: "evorar.compress", label: "用 evorar 压缩…", flag: Some("--compress") },
-    VerbSpec { key: "evorar.compresszip", label: "evorar 压缩为 ZIP", flag: Some("--compress-zip") },
-    VerbSpec { key: "evorar.compress7z", label: "evorar 压缩为 7Z", flag: Some("--compress-7z") },
+    VerbSpec { key: "evorar.compress", label: "用 evorar 压缩…", flag: Some("--compress"), multi_select: true },
+    VerbSpec { key: "evorar.compresszip", label: "evorar 压缩为 ZIP", flag: Some("--compress-zip"), multi_select: true },
+    VerbSpec { key: "evorar.compress7z", label: "evorar 压缩为 7Z", flag: Some("--compress-7z"), multi_select: true },
 ];
 
 /// 压缩包上的菜单(写在 ProgID 下,只有关联的扩展名可见)
 pub const PROGID_VERBS: &[VerbSpec] = &[
-    VerbSpec { key: "open", label: "用 evorar 打开", flag: None },
-    VerbSpec { key: "evorar.here", label: "evorar 解压到当前文件夹", flag: Some("--extract-here") },
-    VerbSpec { key: "evorar.smart", label: "evorar 智能解压", flag: Some("--extract") },
+    VerbSpec { key: "open", label: "用 evorar 打开", flag: None, multi_select: false },
+    VerbSpec { key: "evorar.here", label: "evorar 解压到当前文件夹", flag: Some("--extract-here"), multi_select: true },
+    VerbSpec { key: "evorar.smart", label: "evorar 智能解压", flag: Some("--extract"), multi_select: true },
 ];
 
 // ---------------- 对外 API ----------------
@@ -129,7 +142,8 @@ pub fn status() -> Status {
 }
 
 /// 启动自愈:集成已开启,但注册表记录的 exe 路径与当前运行的不一致
-/// (绿色版更新放到了新位置/改名)时,返回应重写的开关状态,由调用方静默 apply,
+/// (绿色版更新放到了新位置/改名),或记录的布局版本落后(老安装升级)时,
+/// 返回应重写的开关状态,由调用方静默 apply,
 /// 避免旧 exe 删除后右键菜单与关联仍指向死路径。
 pub fn needs_repair(exe: &str) -> Option<IntegrationFlags> {
     let hkcu = RegKey::predef(HKEY_CURRENT_USER);
@@ -139,8 +153,10 @@ pub fn needs_repair(exe: &str) -> Option<IntegrationFlags> {
     if !association && !context_menu {
         return None;
     }
-    let recorded: String = m.get_value("Exe").ok()?;
-    if recorded.eq_ignore_ascii_case(exe) {
+    let recorded: Option<String> = m.get_value("Exe").ok();
+    let layout: u32 = m.get_value("Layout").unwrap_or(0);
+    let path_ok = recorded.is_none_or(|r| r.eq_ignore_ascii_case(exe));
+    if path_ok && layout == LAYOUT_VERSION {
         return None;
     }
     Some(IntegrationFlags { association, context_menu })
@@ -278,6 +294,9 @@ fn write_verb(classes: &RegKey, shell_key: &str, spec: &VerbSpec, exe: &str, tar
     let k = classes.create_subkey(shell_key)?.0;
     k.set_value("MUIVerb", &spec.label)?;
     k.set_value("Icon", &icon_value(exe))?;
+    if spec.multi_select {
+        k.set_value("MultiSelectModel", &"Player")?;
+    }
     let c = classes.create_subkey(format!("{shell_key}\\command"))?.0;
     c.set_value("", &verb_command(exe, spec.flag, target))
 }
@@ -288,7 +307,8 @@ fn write_markers(hkcu: &RegKey, exe: &str, flags: &IntegrationFlags) -> io::Resu
     let m = hkcu.create_subkey(MARKER_ROOT)?.0;
     m.set_value("Exe", &exe)?;
     m.set_value("Association", &(flags.association as u32))?;
-    m.set_value("ContextMenu", &(flags.context_menu as u32))
+    m.set_value("ContextMenu", &(flags.context_menu as u32))?;
+    m.set_value("Layout", &LAYOUT_VERSION)
 }
 
 /// 通知资源管理器关联已变化,免注销立即生效
@@ -341,6 +361,9 @@ mod tests {
         assert!(CONTEXT_VERBS.iter().all(|v| !v.label.is_empty()));
         assert!(PROGID_VERBS.iter().all(|v| !v.label.is_empty()));
         assert!(PROGID_VERBS.iter().any(|v| v.key == "open"), "ProgID 必须有默认 open 动词");
+        // 多选入口(压缩/解压)必须解除数量上限;open 保持系统默认
+        assert!(CONTEXT_VERBS.iter().all(|v| v.multi_select));
+        assert!(PROGID_VERBS.iter().all(|v| v.multi_select == (v.key != "open")));
     }
 
     #[test]
@@ -384,6 +407,12 @@ mod tests {
             .get_value("")
             .unwrap();
         assert_eq!(cmd, verb_command(exe, Some("--compress"), "%1"));
+        let msm: String = hkcu
+            .open_subkey(format!("{CLASSES}\\*\\shell\\evorar.compress"))
+            .unwrap()
+            .get_value("MultiSelectModel")
+            .unwrap();
+        assert_eq!(msm, "Player", "多选数量上限必须解除");
         let bg: String = hkcu
             .open_subkey(format!("{CLASSES}\\Directory\\Background\\shell\\evorar.compresszip\\command"))
             .unwrap()
@@ -434,6 +463,28 @@ mod tests {
         apply(new, IntegrationFlags { association: false, context_menu: false }).unwrap();
         assert!(needs_repair(new).is_none(), "集成已关不触发修复");
         assert!(needs_repair(old).is_none());
+    }
+
+    /// 老安装升级场景:exe 路径未变,但注册表里的 verb 布局是旧版本
+    /// (标记键缺 Layout 值)→ 也应触发静默重写,补上 MultiSelectModel 等新键值
+    #[test]
+    fn needs_repair_detects_stale_layout() {
+        let _reg = REG_GUARD.lock();
+        let exe = r"C:\layout-test\evorar.exe";
+        apply(exe, IntegrationFlags { association: false, context_menu: true }).unwrap();
+        assert!(needs_repair(exe).is_none(), "路径与布局都一致不需要修复");
+
+        let hkcu = RegKey::predef(HKEY_CURRENT_USER);
+        let m = hkcu
+            .open_subkey_with_flags(MARKER_ROOT, KEY_ALL_ACCESS)
+            .unwrap();
+        m.delete_value("Layout").unwrap(); // 模拟 v1 时期的标记
+        assert!(needs_repair(exe).is_some(), "布局落后应触发修复");
+
+        apply(exe, IntegrationFlags { association: false, context_menu: true }).unwrap();
+        assert!(needs_repair(exe).is_none(), "重写后不再需要修复");
+
+        apply(exe, IntegrationFlags { association: false, context_menu: false }).unwrap();
     }
 
     /// 回归(v0.3.1 用户报障):扩展名键存在但默认值被删(绿色版时期开关过
