@@ -4,7 +4,7 @@
 
 use crate::engine::{
     ArchiveEngine, CancelFlag, EntryInfo, ExtractStats, Format, Progress, ProgressCb,
-    check_cancel, safe_join,
+    check_cancel, entry_selected, safe_join,
 };
 use std::fs;
 use std::io::{Read, Write};
@@ -166,12 +166,16 @@ impl ArchiveEngine for TarballEngine {
         &mut self,
         dest: &Path,
         _password: Option<&str>,
+        selection: Option<&[String]>,
         progress: ProgressCb<'_>,
         cancel: &CancelFlag,
     ) -> std::io::Result<ExtractStats> {
         if self.is_single_file_mode()? {
+            // 裸 gz/bz2/xz 只有一个条目,前端能选中它才会发起带 selection 的解压
             return self.extract_single(dest, progress, cancel);
         }
+        let picked =
+            |name: &str| entry_selected(name, selection);
         let stream = self.open_stream()?;
         let mut ar = tar::Archive::new(stream);
         ar.set_preserve_permissions(false);
@@ -185,7 +189,10 @@ impl ArchiveEngine for TarballEngine {
             let mut ar2 = tar::Archive::new(stream2);
             for e in ar2.entries()? {
                 let e = e?;
-                if crate::engine::junk_entry(&e.path()?.to_string_lossy().replace('\\', "/")) {
+                let name = crate::engine::normalize_name(
+                    &e.path()?.to_string_lossy().replace('\\', "/"),
+                );
+                if crate::engine::junk_entry(&name) || !picked(&name) {
                     continue;
                 }
                 if !e.header().entry_type().is_dir() {
@@ -202,7 +209,7 @@ impl ArchiveEngine for TarballEngine {
             let name = crate::engine::normalize_name(
                 &e.path()?.to_string_lossy().replace('\\', "/"),
             );
-            if crate::engine::junk_entry(&name) {
+            if crate::engine::junk_entry(&name) || !picked(&name) {
                 continue;
             }
             if e.header().entry_type().is_dir() {

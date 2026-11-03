@@ -6,7 +6,7 @@
 use crate::engine::detect::fix_zip_name;
 use crate::engine::{
     ArchiveEngine, CancelFlag, EntryInfo, ExtractStats, Format, Progress, ProgressCb,
-    check_cancel, is_dir_name, junk_entry, normalize_name, safe_join,
+    check_cancel, entry_selected, is_dir_name, junk_entry, normalize_name, safe_join,
 };
 use std::fs;
 use std::io::{Read, Write};
@@ -14,9 +14,8 @@ use std::path::{Path, PathBuf};
 
 pub struct ZipEngine {
     path: PathBuf,
-    /// (显示名, 原始名字节, 是否目录) —— list/extract 共用一次目录扫描
-    entries: Vec<(String, Vec<u8>, bool)>,
-    total_bytes: u64,
+    /// (显示名, 解压后大小, 是否目录) —— extract 的进度基数/选中过滤共用
+    entries: Vec<(String, u64, bool)>,
 }
 
 impl ZipEngine {
@@ -25,26 +24,20 @@ impl ZipEngine {
         let mut za = zip::ZipArchive::new(f)
             .map_err(|e| std::io::Error::other(format!("打开 ZIP 失败: {e}")))?;
         let mut entries = Vec::with_capacity(za.len() as usize);
-        let mut total = 0u64;
         for i in 0..za.len() {
             let zf = za
                 .by_index(i)
                 .map_err(|e| std::io::Error::other(format!("读取 ZIP 条目失败: {e}")))?;
-            let raw = zf.name_raw().to_vec();
-            let name = normalize_name(&fix_zip_name(&raw));
+            let name = normalize_name(&fix_zip_name(zf.name_raw()));
             if junk_entry(&name) {
                 continue;
             }
             let is_dir = zf.is_dir() || is_dir_name(&name);
-            if !is_dir {
-                total += zf.size();
-            }
-            entries.push((name, raw, is_dir));
+            entries.push((name, if is_dir { 0 } else { zf.size() }, is_dir));
         }
         Ok(Self {
             path: path.to_path_buf(),
             entries,
-            total_bytes: total,
         })
     }
 }
@@ -82,6 +75,7 @@ impl ArchiveEngine for ZipEngine {
         &mut self,
         dest: &Path,
         password: Option<&str>,
+        selection: Option<&[String]>,
         progress: ProgressCb<'_>,
         cancel: &CancelFlag,
     ) -> std::io::Result<ExtractStats> {
@@ -91,7 +85,18 @@ impl ArchiveEngine for ZipEngine {
         if za.is_empty() {
             return Err(std::io::Error::other("压缩包为空"));
         }
-        let files_total = self.entries.iter().filter(|e| !e.2).count() as u32;
+        let picked = |name: &str| entry_selected(name, selection);
+        let files_total = self
+            .entries
+            .iter()
+            .filter(|(n, _, d)| !*d && picked(n))
+            .count() as u32;
+        let total_bytes = self
+            .entries
+            .iter()
+            .filter(|(n, _, d)| !*d && picked(n))
+            .map(|(_, s, _)| s)
+            .sum::<u64>();
         let mut stats = ExtractStats::default();
         let mut done = 0u32;
         let mut processed = 0u64;
@@ -112,6 +117,9 @@ impl ArchiveEngine for ZipEngine {
                 continue;
             }
             let is_dir = zf.is_dir() || is_dir_name(&name);
+            if !picked(&name) {
+                continue;
+            }
             let target = safe_join(dest, &name)?;
             if is_dir {
                 fs::create_dir_all(&target)?;
@@ -123,7 +131,7 @@ impl ArchiveEngine for ZipEngine {
             }
             progress(&Progress {
                 processed_bytes: processed,
-                total_bytes: self.total_bytes,
+                total_bytes,
                 current_file: name.clone(),
                 files_done: done,
                 files_total,

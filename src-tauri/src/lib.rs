@@ -95,7 +95,8 @@ fn is_archive(path: String) -> bool {
     engine::detect::guess_by_ext(&p).is_some() && engine::detect::sniff(&p).is_ok()
 }
 
-/// 启动解压任务(异步,进度走 `task-progress` 事件,结束走 `task-done`)
+/// 启动解压任务(异步,进度走 `task-progress` 事件,结束走 `task-done`)。
+/// selection=None 全量解压;Some 为界面选中的条目名列表(只解所选)。
 #[tauri::command]
 fn extract_archive(
     app: AppHandle,
@@ -103,7 +104,13 @@ fn extract_archive(
     path: String,
     dest: String,
     password: Option<String>,
+    selection: Option<Vec<String>>,
 ) -> Result<u32, String> {
+    if let Some(sel) = &selection {
+        if sel.is_empty() {
+            return Err("未选择任何条目".into());
+        }
+    }
     let p = PathBuf::from(&path);
     let mut arc = engine::open_archive(&p).map_err(|e| e.to_string())?;
     let task = NEXT_TASK_ID.fetch_add(1, Ordering::SeqCst);
@@ -116,6 +123,7 @@ fn extract_archive(
         let result = arc.extract(
             &destp,
             password.as_deref(),
+            selection.as_deref(),
             &|p: &Progress| emit_progress(&app2, task, p),
             &cancel,
         )

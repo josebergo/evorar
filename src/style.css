@@ -250,6 +250,53 @@ body.dragging .content::after {
   background: var(--bg-hover);
 }
 
+/* 浏览态可点选(压缩态列表复用 .entry-row,不参与选中) */
+#entry-list .entry-row {
+  cursor: pointer;
+}
+
+/* 选中态:点击行切换,配合底部「解压所选」 */
+#entry-list .entry-row.selected {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+#entry-list .entry-row.selected:hover {
+  background: color-mix(in srgb, var(--accent) 17%, transparent);
+}
+
+.entry-check {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  border: 1.5px solid var(--border);
+  border-radius: 50%;
+  position: relative;
+  transition:
+    border-color 0.12s ease,
+    background 0.12s ease;
+}
+
+.entry-row:hover .entry-check {
+  border-color: var(--accent);
+}
+
+.entry-row.selected .entry-check {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+
+.entry-row.selected .entry-check::after {
+  content: "";
+  position: absolute;
+  left: 4px;
+  top: 1.5px;
+  width: 3.5px;
+  height: 7px;
+  border: solid #fff;
+  border-width: 0 1.5px 1.5px 0;
+  transform: rotate(45deg);
+}
+
 .entry-ico {
   width: 24px;
   height: 24px;

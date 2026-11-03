@@ -4,6 +4,7 @@
 
 use crate::engine::{
     ArchiveEngine, CancelFlag, EntryInfo, ExtractStats, Format, Progress, ProgressCb,
+    entry_selected,
 };
 use std::path::{Path, PathBuf};
 
@@ -68,12 +69,21 @@ impl ArchiveEngine for RarEngine {
         &mut self,
         dest: &Path,
         password: Option<&str>,
+        selection: Option<&[String]>,
         progress: ProgressCb<'_>,
         cancel: &CancelFlag,
     ) -> std::io::Result<ExtractStats> {
         let listing = self.listing(password)?;
-        let files_total = listing.iter().filter(|(_, _, f)| *f).count() as u32;
-        let total_bytes: u64 = listing.iter().map(|(_, s, _)| s).sum();
+        let picked = |name: &str| entry_selected(name, selection);
+        let files_total = listing
+            .iter()
+            .filter(|(n, _, f)| *f && picked(n))
+            .count() as u32;
+        let total_bytes: u64 = listing
+            .iter()
+            .filter(|(n, _, f)| *f && picked(n))
+            .map(|(_, s, _)| s)
+            .sum();
         let mut stats = ExtractStats::default();
         let mut done = 0u32;
 
@@ -106,7 +116,7 @@ impl ArchiveEngine for RarEngine {
                     entry.is_file(),
                 )
             };
-            if crate::engine::junk_entry(&entry_name) {
+            if crate::engine::junk_entry(&entry_name) || !picked(&entry_name) {
                 cursor = header
                     .skip()
                     .map_err(|e| std::io::Error::other(format!("跳过条目失败: {e}")))?;

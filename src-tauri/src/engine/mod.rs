@@ -97,13 +97,34 @@ pub trait ArchiveEngine {
     fn format(&self) -> Format;
     fn list(&mut self) -> std::io::Result<Vec<EntryInfo>>;
     /// 解压到 dest;若 smart=true,由上层决定 dest(见 smart 模块),引擎只负责写出。
+    /// selection=None 全量解压;Some 时只解选中的条目(选中目录连带其下所有内容),
+    /// 进度基数(files_total/total_bytes)同步按选中集合计算。
     fn extract(
         &mut self,
         dest: &Path,
         password: Option<&str>,
+        selection: Option<&[String]>,
         progress: ProgressCb<'_>,
         cancel: &CancelFlag,
     ) -> std::io::Result<ExtractStats>;
+}
+
+/// 条目是否属于选中集合:名字精确匹配,或位于某个选中目录之下(保留包内相对路径)。
+/// 目录名带不带尾斜杠、`\` 还是 `/`,都先归一再比;包内路径区分大小写。
+pub(crate) fn entry_selected(name: &str, selection: Option<&[String]>) -> bool {
+    let Some(sel) = selection else {
+        return true;
+    };
+    let n = name
+        .trim_matches(['/', '\\'])
+        .replace('\\', "/");
+    if n.is_empty() {
+        return false;
+    }
+    sel.iter().any(|s| {
+        let s = s.trim_matches(['/', '\\']).replace('\\', "/");
+        !s.is_empty() && (n == s || n.starts_with(&format!("{s}/")))
+    })
 }
 
 /// 根据文件头嗅探格式并构造对应引擎
@@ -187,5 +208,24 @@ mod tests {
         // NFD(e + 组合锐音符)→ NFC(单个 é)
         assert_eq!(normalize_name("cafe\u{301}.txt"), "caf\u{e9}.txt");
         assert_eq!(normalize_name("plain.txt"), "plain.txt");
+    }
+
+    #[test]
+    fn selection_matching() {
+        let sel = vec!["docs/".to_string(), "a.txt".to_string()];
+        // None = 全量
+        assert!(entry_selected("anything", None));
+        // 精确匹配(选中名与条目名的尾斜杠风格互不影响)
+        assert!(entry_selected("docs/", Some(&sel)));
+        assert!(entry_selected("docs", Some(&sel)));
+        assert!(entry_selected("a.txt", Some(&sel)));
+        // 目录连带其下所有内容
+        assert!(entry_selected("docs/sub/b.txt", Some(&sel)));
+        assert!(entry_selected("docs\\sub\\b.txt", Some(&sel)));
+        // 前缀同名不算子路径;未选中的跳过
+        assert!(!entry_selected("docs2/b.txt", Some(&sel)));
+        assert!(!entry_selected("b.txt", Some(&sel)));
+        // Some(空) = 什么都不解
+        assert!(!entry_selected("a.txt", Some(&[])));
     }
 }

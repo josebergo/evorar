@@ -2,7 +2,8 @@
 //! 依据 sevenz-rust 0.6 实际 API:SevenZReader::open(path, Password) + for_each_entries。
 
 use crate::engine::{
-    ArchiveEngine, CancelFlag, EntryInfo, ExtractStats, Format, Progress, ProgressCb, check_cancel,
+    ArchiveEngine, CancelFlag, EntryInfo, ExtractStats, Format, Progress, ProgressCb,
+    check_cancel, entry_selected,
 };
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -58,12 +59,21 @@ impl ArchiveEngine for SevenZEngine {
         &mut self,
         dest: &Path,
         password: Option<&str>,
+        selection: Option<&[String]>,
         progress: ProgressCb<'_>,
         cancel: &CancelFlag,
     ) -> std::io::Result<ExtractStats> {
         let entries = entries_of(&self.path, password)?;
-        let files_total = entries.iter().filter(|e| !e.is_directory).count() as u32;
-        let total_bytes: u64 = entries.iter().map(|e| e.size()).sum();
+        let picked = |name: &str| entry_selected(name, selection);
+        let files_total = entries
+            .iter()
+            .filter(|e| !e.is_directory && picked(&e.name))
+            .count() as u32;
+        let total_bytes: u64 = entries
+            .iter()
+            .filter(|e| !e.is_directory && picked(&e.name))
+            .map(|e| e.size())
+            .sum();
         let mut sz = sevenz_rust::SevenZReader::open(&self.path, password_of(password))
             .map_err(|e| std::io::Error::other(format!("打开 7Z 失败: {e}")))?;
         let mut stats = ExtractStats::default();
@@ -78,6 +88,9 @@ impl ArchiveEngine for SevenZEngine {
                     return Ok(true);
                 }
                 let name = crate::engine::normalize_name(&name);
+                if !picked(&name) {
+                    return Ok(true); // 未选中:跳过不解,继续后续条目
+                }
                 let target = crate::engine::safe_join(&dest, &name)
                     .map_err(|e| sevenz_rust::Error::other(e.to_string()))?;
                 if let Some(parent) = target.parent() {

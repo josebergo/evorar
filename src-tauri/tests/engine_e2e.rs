@@ -59,7 +59,7 @@ fn zip_roundtrip() {
     let entries = arc.list().unwrap();
     assert!(entries.iter().any(|e| e.name.contains("中文文档.txt")), "中文文件名保留");
     let out = tmpdir("zip_extract");
-    arc.extract(&out, None, &noop_progress, &cancel()).unwrap();
+    arc.extract(&out, None, None, &noop_progress, &cancel()).unwrap();
     let files = stats_files(&out);
     assert!(files.iter().any(|f| f.contains("hello.txt")));
     assert!(fs::read_to_string(out.join(src.file_name().unwrap()).join("docs").join("中文文档.txt"))
@@ -89,7 +89,7 @@ fn sevenz_roundtrip() {
     let entries = arc.list().unwrap();
     assert!(entries.iter().any(|e| e.name.contains("hello.txt")));
     let out = tmpdir("7z_extract");
-    arc.extract(&out, None, &noop_progress, &cancel()).unwrap();
+    arc.extract(&out, None, None, &noop_progress, &cancel()).unwrap();
     assert!(stats_files(&out).iter().any(|f| f.contains("hello.txt")));
     let _ = fs::remove_dir_all(&src);
 }
@@ -110,7 +110,7 @@ fn cancel_flag_aborts_zip_extract() {
     let flag = Arc::new(AtomicBool::new(true)); // 立即取消
     let mut arc = evorar_lib::engine::open_archive(&dest).unwrap();
     let out = tmpdir("cancel_extract");
-    let err = arc.extract(&out, None, &noop_progress, &flag).unwrap_err();
+    let err = arc.extract(&out, None, None, &noop_progress, &flag).unwrap_err();
     assert!(err.to_string().contains("已取消"), "取消生效: {err}");
 }
 
@@ -130,7 +130,7 @@ fn gz_single_file_extract() {
     assert!(matches!(fmt, evorar_lib::engine::Format::Gzip));
     let mut arc = evorar_lib::engine::open_archive(&gz).unwrap();
     let out = tmpdir("gz_extract");
-    arc.extract(&out, None, &noop_progress, &cancel()).unwrap();
+    arc.extract(&out, None, None, &noop_progress, &cancel()).unwrap();
     assert_eq!(fs::read(out.join("note.txt")).unwrap(), raw);
 }
 
@@ -145,6 +145,70 @@ fn gbk_zip_names_fixed() {
         entries.iter().map(|e| e.name.clone()).collect::<Vec<_>>()
     );
     let out = tmpdir("gbk_extract");
-    arc.extract(&out, None, &noop_progress, &cancel()).unwrap();
+    arc.extract(&out, None, None, &noop_progress, &cancel()).unwrap();
     assert!(out.join("文档.txt").exists(), "解压出正确中文文件名");
+}
+
+#[test]
+fn zip_selected_extract() {
+    let src = tmpdir("sel_src");
+    sample_tree(&src); // hello.txt + docs/中文文档.txt
+    let dest = tmpdir("sel_out").join("t.zip");
+    evorar_lib::engine::zipfmt::compress_zip(
+        &[src.clone()],
+        &dest,
+        evorar_lib::engine::zipfmt::ZipLevel::Normal,
+        &noop_progress,
+        &cancel(),
+    )
+    .unwrap();
+
+    let mut arc = evorar_lib::engine::open_archive(&dest).unwrap();
+    let top = src.file_name().unwrap().to_string_lossy().into_owned();
+    // 只选 hello.txt:目录与其余文件都不解
+    let sel = vec![format!("{top}/hello.txt")];
+    let out = tmpdir("sel_extract");
+    let stats = arc
+        .extract(&out, None, Some(&sel), &noop_progress, &cancel())
+        .unwrap();
+    assert_eq!(stats.files, 1);
+    assert!(out.join(&top).join("hello.txt").exists(), "选中的文件解出");
+    assert!(!out.join(&top).join("docs").exists(), "未选中的目录不解");
+
+    // 只选 docs 目录:连带其下全部内容,hello.txt 不解
+    let sel_dir = vec![format!("{top}/docs")];
+    let out2 = tmpdir("sel_extract_dir");
+    let stats2 = arc
+        .extract(&out2, None, Some(&sel_dir), &noop_progress, &cancel())
+        .unwrap();
+    assert_eq!(stats2.files, 1, "docs 下只有一个文件");
+    assert!(out2.join(&top).join("docs").join("中文文档.txt").exists());
+    assert!(!out2.join(&top).join("hello.txt").exists());
+    let _ = fs::remove_dir_all(&src);
+}
+
+#[test]
+fn sevenz_selected_extract() {
+    let src = tmpdir("sel7z_src");
+    sample_tree(&src);
+    let dest = tmpdir("sel7z_out").join("t.7z");
+    evorar_lib::engine::sevenz::compress_7z(
+        &[src.clone()],
+        &dest,
+        evorar_lib::engine::sevenz::SevenZLevel::Normal,
+        &noop_progress,
+        &cancel(),
+    )
+    .unwrap();
+    let mut arc = evorar_lib::engine::open_archive(&dest).unwrap();
+    let top = src.file_name().unwrap().to_string_lossy().into_owned();
+    let sel = vec![format!("{top}/hello.txt")];
+    let out = tmpdir("sel7z_extract");
+    let stats = arc
+        .extract(&out, None, Some(&sel), &noop_progress, &cancel())
+        .unwrap();
+    assert_eq!(stats.files, 1);
+    assert!(out.join(&top).join("hello.txt").exists());
+    assert!(!out.join(&top).join("docs").exists());
+    let _ = fs::remove_dir_all(&src);
 }

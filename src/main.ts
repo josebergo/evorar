@@ -58,6 +58,9 @@ let compressLevel: "fast" | "normal" | "max" = "normal";
 let activeTask: number | null = null;
 let lastOutputDir: string | null = null;
 let lastExtractDest: string | null = null;
+// 浏览态选中的条目(原始包内名,选中目录连带其下内容);空 = 全量解压
+let selectedEntries = new Set<string>();
+let lastExtractSelection: string[] | null = null;
 
 // ---------- DOM ----------
 const $ = <T extends HTMLElement = HTMLElement>(sel: string) =>
@@ -79,6 +82,10 @@ const compList = $("#comp-list");
 
 const actionBrowse = $("#action-browse");
 const actionCompress = $("#action-compress");
+
+const smartExtractBtn = $("#smart-extract-btn");
+const extractToBtn = $("#extract-to-btn");
+const clearSelBtn = $("#clear-selection-btn");
 
 const fmtZipBtn = $("#fmt-zip");
 const fmt7zBtn = $("#fmt-7z");
@@ -221,6 +228,8 @@ async function openArchive(path: string) {
     const info = await invoke<ArchiveInfo>("open_archive", { path });
     archive = info;
     compressSources = [];
+    selectedEntries.clear();
+    refreshBrowseActions();
     renderArchive();
     showView(browseView);
   } catch (e) {
@@ -228,6 +237,19 @@ async function openArchive(path: string) {
   } finally {
     dropHint.classList.remove("busy");
   }
+}
+
+// 有选中条目时,解压按钮切换为「只解所选」语义
+function refreshBrowseActions() {
+  const n = selectedEntries.size;
+  const has = n > 0;
+  smartExtractBtn.textContent = has ? `⚡ 解压所选 · ${n} 项` : "⚡ 智能解压";
+  extractToBtn.textContent = has ? "所选解压到…" : "解压到…";
+  clearSelBtn.hidden = !has;
+}
+
+function currentSelection(): string[] | null {
+  return selectedEntries.size > 0 ? [...selectedEntries] : null;
 }
 
 function renderArchive() {
@@ -248,9 +270,20 @@ function renderArchive() {
     const row = document.createElement("div");
     row.className = "entry-row";
     const name = e.is_dir ? e.name.replace(/[\/\\]$/, "") : e.name;
-    row.innerHTML = `<span class="entry-ico">${iconFor(name, e.is_dir)}</span>
+    row.innerHTML = `<span class="entry-check" aria-hidden="true"></span>
+      <span class="entry-ico">${iconFor(name, e.is_dir)}</span>
       <span class="entry-name" title="${name}">${name}</span>
       <span class="entry-size">${e.is_dir ? "" : fmtSize(e.size)}</span>`;
+    if (selectedEntries.has(e.name)) row.classList.add("selected");
+    row.addEventListener("click", () => {
+      // 正在用鼠标划选文件名文本时不当作点击选中
+      const sel = window.getSelection();
+      if (sel && !sel.isCollapsed) return;
+      if (selectedEntries.has(e.name)) selectedEntries.delete(e.name);
+      else selectedEntries.add(e.name);
+      row.classList.toggle("selected", selectedEntries.has(e.name));
+      refreshBrowseActions();
+    });
     frag.appendChild(row);
   });
   if (sorted.length > max) {
@@ -343,14 +376,17 @@ function toastShow(msg: string, isError = false, outputDir?: string) {
 }
 
 // ---------- 解压 ----------
-async function startExtract(dest: string, password?: string) {
+/** selection=null 全量解压;传选中条目名数组则只解所选(目录连带其下内容) */
+async function startExtract(dest: string, password?: string, selection: string[] | null = null) {
   if (!archive) return;
   lastExtractDest = dest;
+  lastExtractSelection = selection;
   try {
     const taskId = await invoke<number>("extract_archive", {
       path: archive.path,
       dest,
       password: password ?? null,
+      selection,
     });
     setProgress({ taskId, processedBytes: 0, totalBytes: 0, currentFile: "", filesDone: 0, filesTotal: 0 }, true);
   } catch (e) {
@@ -358,11 +394,11 @@ async function startExtract(dest: string, password?: string) {
   }
 }
 
-$("#smart-extract-btn")!.addEventListener("click", () => {
-  if (archive) startExtract(archive.suggestedDir);
+smartExtractBtn.addEventListener("click", () => {
+  if (archive) startExtract(archive.suggestedDir, undefined, currentSelection());
 });
 
-$("#extract-to-btn")!.addEventListener("click", async () => {
+extractToBtn.addEventListener("click", async () => {
   if (!archive) return;
   const dir = await dialogOpen({
     directory: true,
@@ -370,7 +406,13 @@ $("#extract-to-btn")!.addEventListener("click", async () => {
     title: "选择解压位置",
     defaultPath: archive.path ? undefined : undefined,
   });
-  if (typeof dir === "string" && dir) startExtract(dir);
+  if (typeof dir === "string" && dir) startExtract(dir, undefined, currentSelection());
+});
+
+clearSelBtn.addEventListener("click", () => {
+  selectedEntries.clear();
+  entryList.querySelectorAll(".entry-row.selected").forEach((r) => r.classList.remove("selected"));
+  refreshBrowseActions();
 });
 
 // ---------- 压缩 ----------
@@ -586,7 +628,7 @@ listen<TaskDone>("task-done", (ev) => {
     if (err.includes("密码") || err.toLowerCase().includes("password")) {
       const pw = prompt("该压缩包已加密,请输入密码:");
       if (pw && archive) {
-        startExtract(lastExtractDest ?? archive.suggestedDir, pw);
+        startExtract(lastExtractDest ?? archive.suggestedDir, pw, lastExtractSelection);
         return;
       }
     }
