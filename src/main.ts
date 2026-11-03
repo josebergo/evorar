@@ -190,8 +190,10 @@ function iconFor(name: string, isDir: boolean): string {
         `<linearGradient id="evi-${id}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${a}"/><stop offset="1" stop-color="${b}"/></linearGradient>`
     )
     .join("");
+  // 不能用 display:none:Chromium 不解析 display:none 子树里的渐变 paint server,
+  // fill="url(#evi-…)" 会整体失效 → 列表图标全部不可见。0 尺寸 + 裁剪同样不占版面。
   const holder = document.createElement("div");
-  holder.style.display = "none";
+  holder.style.cssText = "position:absolute;width:0;height:0;overflow:hidden";
   holder.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg">${defs}</svg>`;
   document.body.appendChild(holder);
 })();
